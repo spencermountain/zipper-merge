@@ -1,5 +1,5 @@
 import { promisify } from 'util'
-import { exec, execFile } from 'child_process'
+import { execFile } from 'child_process'
 
 const runFile = promisify(execFile)
 
@@ -45,7 +45,7 @@ export const checkGitBranch = async (options = {}) => {
   }
 }
 
-const checkInteractiveTerminal = (stdin = process.stdin, stdout = process.stdout) => {
+export const checkInteractiveTerminal = (stdin = process.stdin, stdout = process.stdout) => {
   if (!stdin.isTTY || !stdout.isTTY) {
     throw new Error(
       'File selection requires an interactive terminal. Run zipper-merge without piping input or output.'
@@ -56,7 +56,5 @@ const checkInteractiveTerminal = (stdin = process.stdin, stdout = process.stdout
 export const checkGitEnvironment = async (options = {}) => {
   await checkGitInstalled(options)
   await checkGitRepository(options)
-  checkInteractiveTerminal()
-  return await checkGitBranch(options)
+  return checkGitBranch(options)
 }
-

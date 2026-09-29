@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* zipper-merge 0.0.1 - MIT */
 import react, { useState, useRef, createElement } from 'react';
-import { useApp, useInput, Text, Box, render } from 'ink';
+import { useApp, useInput, Text, Box, useStdin, useWindowSize, render } from 'ink';
 import Link from 'ink-link';
 import { promisify } from 'util';
 import { execFile } from 'child_process';
@@ -10,44 +10,50 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { promisify as promisify$1 } from 'node:util';
 
-const Simple = function ({ title, description, choices, clearPrompt }) {
+const Simple = function ({ files, clearPrompt }) {
   const [selected, setSelected] = useState(0);
   const search = useRef({ prefix: '', updatedAt: 0 });
   const { exit } = useApp();
 
   useInput((input, key) => {
-    if (key.escape || (key.ctrl && input === 'c')) {
+    if (key.escape) return // App handles Escape globally.
+    if (key.ctrl && input === 'c') {
       exit(new Error('Selection cancelled'));
     } else if (key.upArrow) {
       search.current.prefix = '';
-      setSelected((index) => (index - 1 + choices.length) % choices.length);
+      setSelected((index) => (index - 1 + files.length) % files.length);
     } else if (key.downArrow) {
       search.current.prefix = '';
-      setSelected((index) => (index + 1) % choices.length);
+      setSelected((index) => (index + 1) % files.length);
     } else if (key.return) {
       clearPrompt();
-      exit(choices[selected].id);
+      exit(files[selected].relative);
     } else if (input && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input)) {
       const now = Date.now();
       const prefix = now - search.current.updatedAt > 700 ? '' : search.current.prefix;
       search.current = { prefix: prefix + input.toLowerCase(), updatedAt: now };
-      const match = choices.findIndex((choice) =>
-        choice.label.toLowerCase().startsWith(search.current.prefix)
+      const match = files.findIndex((choice) =>
+        choice.relative.toLowerCase().startsWith(search.current.prefix)
       );
-      if (match !== -1) setSelected(match);
+      if (match !== -1) {
+        setSelected(match);
+      }
     }
   });
 
   return (
-    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: 1 }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start", gap: 3 }, /*#__PURE__*/react.createElement(Text, { bold: true }, title || ''), /*#__PURE__*/react.createElement(Text, { dimColor: true }, description || '')), /*#__PURE__*/react.createElement(Box,
+    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length), /*#__PURE__*/react.createElement(Text, { bold: true }, " Current files with conflicts:")), /*#__PURE__*/react.createElement(Box,
         { flexDirection: "column",
         borderTop: false,
+        borderLeft: true,
+        borderStyle: "single",
         borderBottom: false,
         borderRight: false,
         borderColor: "gray",
-        paddingLeft: 1 }, choices.map((choice, index) => (
-          /*#__PURE__*/react.createElement(Text, { key: choice.id, color: index === selected ? 'cyan' : undefined }, /*#__PURE__*/react.createElement(Text, { bold: true, color: "red" }, `${index === selected ? '●' : '○'} ${choice.label}`), choice.description && /*#__PURE__*/react.createElement(Text, { dimColor: true }, ` — ${choice.description}`))
-        ))))
+        paddingLeft: 1,
+        paddingTop: 1 }, files.map((choice, index) => (
+          /*#__PURE__*/react.createElement(Box, { key: choice.relative, flexDirection: "row", gap: 2, paddingLeft: 1, minHeight: 2 }, /*#__PURE__*/react.createElement(Text, null, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, choice.relative), choice.error?.message && /*#__PURE__*/react.createElement(Text, { dimColor: true }, ` — ${choice.error?.message}`)))
+        ))), /*#__PURE__*/react.createElement(Text, { dimColor: true }, selected))
   )
 };
 
@@ -55,52 +61,69 @@ var version = '0.0.1';
 
 const Banner = function () {
   return (
-    /*#__PURE__*/react.createElement(Box, { flexDirection: "row", gap: 1, justifyContent: "space-between", width: "100%", maxHeight: 3 }, /*#__PURE__*/react.createElement(Box, { paddingX: 1, paddingY: 0, alignSelf: "flex-start" }, /*#__PURE__*/react.createElement(Link, { url: "https://github.com/spencermountain/zipper-merge" }, /*#__PURE__*/react.createElement(Text, { color: "green", bold: true, underline: true, wrap: "truncate" }, "zipper-merge"))), /*#__PURE__*/react.createElement(Text, { color: "grey", dim: true }, "v", version))
+    /*#__PURE__*/react.createElement(Box, { flexDirection: "row", gap: 1, justifyContent: "start", maxHeight: 3 }, /*#__PURE__*/react.createElement(Box, { paddingX: 1, paddingY: 0, alignSelf: "flex-start" }, /*#__PURE__*/react.createElement(Link, { url: "https://github.com/spencermountain/zipper-merge" }, /*#__PURE__*/react.createElement(Text, { color: "green", bold: true, underline: true, wrap: "truncate" }, "zipper-merge"))), /*#__PURE__*/react.createElement(Text, { color: "grey", dim: true }, "v", version))
   )
 };
 
 const StatusBox = function ({ state }) {
   const { repoName } = state;
-  console.log(state);
+  const incomingName = state.branches.incoming
+    .map((branch) => {
+      return branch.branches.join(' ')
+    })
+    .join(' / ');
   return (
     /*#__PURE__*/react.createElement(Box,
       { flexDirection: "column",
       alignSelf: "start",
-      marginLeft: '15%',
+      marginLeft: '5%',
       width: "30",
       flexShrink: 1,
       minHeight: "30",
       borderStyle: "round",
       borderColor: "grey",
-      backgroundDimColor: "red" }, /*#__PURE__*/react.createElement(Box, { alignSelf: "start" }, /*#__PURE__*/react.createElement(Text, { color: "yellow" }, " ", repoName), /*#__PURE__*/react.createElement(Text, { color: "cyan" }, " ", '/' + state.branches.current)), /*#__PURE__*/react.createElement(Box, { alignSelf: "center", padding: 1 }, /*#__PURE__*/react.createElement(Text, { color: "magenta" }, " 🎈 Currently in a merge conflict")))
+      backgroundDimColor: "red" }, /*#__PURE__*/react.createElement(Box, { alignSelf: "start", paddingLeft: 1 }, /*#__PURE__*/react.createElement(Text, { color: "yellow" }, " ", repoName), /*#__PURE__*/react.createElement(Text, { color: "cyan" }, " ", '/' + state.branches.current)), /*#__PURE__*/react.createElement(Box, { alignSelf: "start", padding: 1, italic: true }, /*#__PURE__*/react.createElement(Text, { color: "yellow", bold: true }, ' ↯ '), /*#__PURE__*/react.createElement(Text, { color: "whiteDim" }, "Currently in a merge conflict")), /*#__PURE__*/react.createElement(Box,
+        { flexDirection: "row",
+        alignSelf: "end",
+        justifyContent: "flex-end",
+        width: "100%",
+        paddingRight: 1 }, /*#__PURE__*/react.createElement(Text, { color: "magenta", dim: true }, ' ↯ ', incomingName)))
   )
 };
+
+const Footer = ({ hasConflicts = false }) => (
+  /*#__PURE__*/react.createElement(Box, { height: 1, flexShrink: 0, paddingX: 1, overflow: "hidden" }, /*#__PURE__*/react.createElement(Text, { dimColor: true, wrap: "truncate-end" }, hasConflicts ? 'Esc exit · ↑/↓ choose file · Enter select' : 'Esc exit'))
+);
 
 const App = function ({ state = {}, clearPrompt }) {
-  const { conflicts = {} } = state;
-  const files = Object.keys(conflicts);
+  const { exit } = useApp();
+  const { isRawModeSupported } = useStdin();
+  const { rows } = useWindowSize();
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        clearPrompt?.();
+        exit();
+      }
+    },
+    { isActive: isRawModeSupported }
+  );
+
+  const { conflicts: files = [] } = state;
   return (
-    /*#__PURE__*/react.createElement(Box, { width: "100%", overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
-        /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, { state: state }), /*#__PURE__*/react.createElement(Simple,
-            { title: `${files.length} Current Files with conflicts`,
-            description: "Use ↑/↓ to choose a file, then press Enter",
-            choices: files.map((file) => ({
-              id: file,
-              label: file,
-              description: conflicts[file].error?.message
-            })),
-            clearPrompt: clearPrompt }))
-      ) : (
-        /*#__PURE__*/react.createElement(Text, null, "No merge conflicts found.")
-      ))
+    /*#__PURE__*/react.createElement(Box, { width: "100%", height: rows, overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
+          /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, { state: state }), /*#__PURE__*/react.createElement(Simple, { files: files, clearPrompt: clearPrompt }))
+        ) : (
+          /*#__PURE__*/react.createElement(Text, null, "No merge conflicts found.")
+        )), /*#__PURE__*/react.createElement(Footer, { hasConflicts: files.length > 0 }))
   )
 };
 
-const runFile$1 = promisify(execFile);
+const runFile$3 = promisify(execFile);
 
 const checkGitInstalled = async (options = {}) => {
   try {
-    await runFile$1('git', ['--version'], options);
+    await runFile$3('git', ['--version'], options);
   } catch (error) {
     if (error.code === 'ENOENT') {
       throw new Error('Git is not installed or is not available on PATH.')
@@ -112,7 +135,7 @@ const checkGitInstalled = async (options = {}) => {
 const checkGitRepository = async (options = {}) => {
   let stdout;
   try {
-    const result = await runFile$1('git', ['rev-parse', '--is-inside-work-tree'], options);
+    const result = await runFile$3('git', ['rev-parse', '--is-inside-work-tree'], options);
     stdout = result.stdout;
   } catch (error) {
     throw new Error(
@@ -128,7 +151,7 @@ const checkGitRepository = async (options = {}) => {
 
 const checkGitBranch = async (options = {}) => {
   try {
-    const { stdout } = await runFile$1('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], options);
+    const { stdout } = await runFile$3('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], options);
     return stdout.trim()
   } catch (error) {
     if (error.code === 1) {
@@ -151,8 +174,7 @@ const checkInteractiveTerminal = (stdin = process.stdin, stdout = process.stdout
 const checkGitEnvironment = async (options = {}) => {
   await checkGitInstalled(options);
   await checkGitRepository(options);
-  checkInteractiveTerminal();
-  return await checkGitBranch(options)
+  return checkGitBranch(options)
 };
 
 // Markers must occupy a whole line. Labels follow a space or tab; the separator
@@ -247,57 +269,62 @@ const parseConflicts = (text) => {
   return sections
 };
 
-const runFile = promisify$1(execFile$1);
-
-// Map repo-relative filenames to { sections, conflicts, error }. Files stay in
-// the map until staged, even after all markers are resolved. Per-file failures
+const runFile$2 = promisify$1(execFile$1);
+// Each file includes its basename (filename), repo-relative path (relative),
+// and full working-tree path (absolute). Files stay listed until staged, even
+// after all markers are resolved. Per-file failures
 // have empty arrays and error details; failures running Git reject the call.
 const getConflicts = async (options = {}) => {
-  const { stdout: rootOutput } = await runFile('git', ['rev-parse', '--show-toplevel'], options);
+  const { stdout: rootOutput } = await runFile$2('git', ['rev-parse', '--show-toplevel'], options);
   const root = rootOutput.replace(/\r?\n$/, '');
-  const { stdout } = await runFile(
-    'git', ['diff', '--no-relative', '--name-only', '--diff-filter=U', '-z'], options
+  const { stdout } = await runFile$2(
+    'git',
+    ['diff', '--no-relative', '--name-only', '--diff-filter=U', '-z'],
+    options
   );
   const files = stdout.split('\0').filter(Boolean);
-  const entries = await Promise.all(files.map(async (file) => {
-    try {
-      const path = join(root, file);
-      // Unmerged entries can be deleted files or symlinks, not just text files.
-      // Do not follow a conflicted symlink and read an unrelated target.
-      if (!(await lstat(path)).isFile()) throw new Error('Not a regular file')
-      const contents = await readFile(path);
-      if (contents.includes(0)) throw new Error('Binary file cannot be parsed as text')
-      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(contents);
-      const sections = parseConflicts(text);
-      return [file, {
-        sections,
-        conflicts: sections.filter((section) => section.type === 'conflict'),
-        error: null
-      }]
-    } catch (error) {
-      // One unreadable or malformed file must not hide the other unmerged files.
-      return [file, {
-        sections: [], conflicts: [],
-        error: { message: error.message, code: error.code ?? null, lineNumber: error.lineNumber ?? null }
-      }]
-    }
-  }));
-  return Object.fromEntries(entries)
+  const entries = await Promise.all(
+    files.map(async (file) => {
+      const paths = { filename: basename(file), relative: file, absolute: join(root, file) };
+      try {
+        // Unmerged entries can be deleted files or symlinks, not just text files.
+        // Do not follow a conflicted symlink and read an unrelated target.
+        if (!(await lstat(paths.absolute)).isFile()) throw new Error('Not a regular file')
+        const contents = await readFile(paths.absolute);
+        if (contents.includes(0)) throw new Error('Binary file cannot be parsed as text')
+        const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(contents);
+        const sections = parseConflicts(text);
+        return {
+          ...paths,
+          sections,
+          conflicts: sections.filter((section) => section.type === 'conflict'),
+          error: null
+        }
+      } catch (error) {
+        // One unreadable or malformed file must not hide the other unmerged files.
+        return {
+          ...paths,
+          sections: [],
+          conflicts: [],
+          error: {
+            message: error.message,
+            code: error.code ?? null,
+            lineNumber: error.lineNumber ?? null
+          }
+        }
+      }
+    })
+  );
+  return entries
 };
 
-// Use the working tree's root name, even when called from a nested directory.
-// This works for local repositories without a remote; Git errors propagate.
-const getRepoName = async (options = {}) => {
-  const { stdout } = await runFile('git', ['rev-parse', '--show-toplevel'], options);
-  return basename(stdout.replace(/\r?\n$/, ''))
-};
-
+const runFile$1 = promisify$1(execFile$1);
 // Git records incoming commits, not necessarily the branch names used to start
 // an operation. Return every local branch whose tip matches, rather than guess.
 // `current` is null for detached HEAD; `rebasing` names the branch being rebased.
-const getBranchNames = async (options = {}) => {
+const getBranches = async (options = {}) => {
   const git = async (...args) => {
-    const { stdout } = await runFile('git', args, options);
+    const { stdout } = await runFile$1('git', args, options);
     return stdout.trim()
   };
   const optionalRef = async (...args) => {
@@ -358,21 +385,32 @@ const getBranchNames = async (options = {}) => {
   return { current, operation, incoming, rebasing }
 };
 
+const runFile = promisify$1(execFile$1);
+
+
+// Use the working tree's root name, even when called from a nested directory.
+// This works for local repositories without a remote; Git errors propagate.
+const getRepoName = async (options = {}) => {
+  const { stdout } = await runFile('git', ['rev-parse', '--show-toplevel'], options);
+  return basename(stdout.replace(/\r?\n$/, ''))
+};
+
 const getState = async (options = {}) => {
   const conflicts = await getConflicts(options);
   const repoName = await getRepoName(options);
-  const branches = await getBranchNames(options);
+  const branches = await getBranches(options);
   return { conflicts, repoName, branches }
 };
 
 try {
   await checkGitEnvironment();
   const state = await getState();
-  if (Object.keys(state.conflicts).length === 0) {
-    console.log('No conflicts found.');
-    process.exitCode = 0;
+  if (state.conflicts.length === 0) {
+    console.log('No merge conflicts found.');
+  } else {
+    checkInteractiveTerminal();
+    const app = render(createElement(App, { state, clearPrompt: () => app.clear() }));
   }
-  const app = render(createElement(App, { state, clearPrompt: () => app.clear() }));
 } catch (error) {
   console.error(`zipper-merge: ${error.message}`);
   process.exitCode = 1;

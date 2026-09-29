@@ -66,7 +66,7 @@ test('Git preflight guards', async (t) => {
   await rejects(t, checkGitBranch({ cwd }), /HEAD is detached/)
 })
 
-test('selection requires terminal input and output', (t) => {
+test('file selection requires terminal input and output', (t) => {
   t.doesNotThrow(() => checkInteractiveTerminal({ isTTY: true }, { isTTY: true }))
   t.throws(() => checkInteractiveTerminal({}, { isTTY: true }), /interactive terminal/)
   t.throws(() => checkInteractiveTerminal({ isTTY: true }, {}), /interactive terminal/)

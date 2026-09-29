@@ -1,69 +1,30 @@
-# zipper-merge
-experimental CLI tool to help with merge conflicts
+<div align="center">
+  <img src="https://cloud.githubusercontent.com/assets/399657/23590290/ede73772-01aa-11e7-8915-181ef21027bc.png" />
+  <div>git conflict helper CLI tool</div>
+  <a href="https://npmjs.org/package/zipper-merge">
+    <img src="https://img.shields.io/npm/v/zipper-merge.svg?style=flat-square" />
+  </a>
+</div>
 
-Requires Node.js 22 or newer and Git. Run `zipper-merge` from a Git working tree
-on a branch. Conflicted files appear in an interactive selector; use the arrow
-keys and Enter to select a file. This currently lists conflicts; it does not
-resolve them.
+<div align="center">
+  <code>npx zipper-merge</code>
+</div>
 
-Development:
 
-```sh
-pnpm install
-npm run dev
-npm run watch
-```
+<!-- spacer -->
+<img height="50px" src="https://user-images.githubusercontent.com/399657/68221862-17ceb980-ffb8-11e9-87d4-7b30b6488f16.png"/>
 
-Build and check the npm package:
+isn't working with other people hard-enough as it is.
 
-```sh
-npm test
-npm pack
-```
+<!-- spacer -->
+<img height="50px" src="https://user-images.githubusercontent.com/399657/68221862-17ceb980-ffb8-11e9-87d4-7b30b6488f16.png"/>
 
-Rollup compiles the CLI and JSX into `builds/index.js`. `npm pack` rebuilds it
-automatically. The package ships this compiled entry with Ink and React as
-runtime dependencies; `tsx` is only used during development. Type declarations
-are not included yet.
+this is a CLI tool to help walk through a git merge-conflict, without using any terminology.
 
-Install a locally packed release with `npm install -g ./zipper-merge-0.0.1.tgz`,
-then run `zipper-merge` inside the repository you want to inspect.
+I built it because i never learned how to do this very well, and recently spent $20 getting a AI to do one.
 
-Try real Git conflicts in a disposable, ignored `dummy/` repository:
+it works well for my uses, but if you're doing a octopus-merge at a bank, use a better tool.
 
-```sh
-pnpm conflict:simple      # Merge conflict in menu.txt
-pnpm conflict:multi       # Merge conflicts in three files, including a spaced filename
-pnpm conflict:multi-step  # Two cherry-picked commits, each stopping at a different file
-pnpm conflict:clean       # Clean repository with no conflicts
-```
+PRs welcome
 
-Each command deletes and recreates the same dummy, including any edits made
-there. It refuses to overwrite an existing folder without its dummy marker.
-The main checkout's Git state is unaffected.
-
-After creating a scenario, run `pnpm --dir dummy dev`, or:
-
-```sh
-cd dummy
-pnpm dev
-git status
-```
-
-The dummy's launcher imports the unbuilt source from this checkout. Changes
-to `src/` are available on the next run; `pnpm watch` inside the dummy restarts
-on source changes. No package installation or build is needed in the dummy.
-
-For `multi-step`, resolve `menu.txt`, stage it, and run
-`git -c core.editor=true cherry-pick --continue`. The second commit then conflicts
-in `config/settings.json`; resolve and stage that file and continue again. Both
-steps remain on `main`. Use `git cherry-pick --abort` to cancel. The merge scenarios
-can be completed with `git add . && git -c core.editor=true merge --continue` after
-resolving the files, or cancelled with `git merge --abort`.
-
-Run another `conflict:*` command from the parent checkout to reset the dummy.
-
-The examples live in `scripts/examples/`. Read `simple.js`, `multi.js`,
-`multi-step.js`, or `clean.js` to see the exact edits on each branch. Comments
-explain why those edits conflict. Shared reset, Git, and source-launcher helpers
-live in `lib.js`; `index.js` selects the scenario and prints usage instructions.
+MIT

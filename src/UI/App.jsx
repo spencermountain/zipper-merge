@@ -1,33 +1,40 @@
 import React from 'react'
-import { Box, Text } from 'ink'
-import Select from './Select.jsx'
+import { Box, Text, useApp, useInput, useStdin, useWindowSize } from 'ink'
+import FileSelect from './FileSelect.jsx'
 import Colors from './Colors.jsx'
 import Header from './Header.jsx'
 import StatusBox from './StatusBox.jsx'
+import Footer from './Footer.jsx'
 
 const App = function ({ state = {}, clearPrompt }) {
-  const { conflicts = {} } = state
-  const files = Object.keys(conflicts)
+  const { exit } = useApp()
+  const { isRawModeSupported } = useStdin()
+  const { rows } = useWindowSize()
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        clearPrompt?.()
+        exit()
+      }
+    },
+    { isActive: isRawModeSupported }
+  )
+
+  const { conflicts: files = [] } = state
   return (
-    <Box width="100%" overflow="hidden" flexDirection="column">
-      <Header />
-      {files.length > 0 ? (
-        <Box flexDirection="column" padding={1}>
-          <StatusBox state={state} />
-          <Select
-            title={`${files.length} Current Files with conflicts`}
-            description="Use ↑/↓ to choose a file, then press Enter"
-            choices={files.map((file) => ({
-              id: file,
-              label: file,
-              description: conflicts[file].error?.message
-            }))}
-            clearPrompt={clearPrompt}
-          />
-        </Box>
-      ) : (
-        <Text>No merge conflicts found.</Text>
-      )}
+    <Box width="100%" height={rows} overflow="hidden" flexDirection="column">
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+        <Header />
+        {files.length > 0 ? (
+          <Box flexDirection="column" padding={1}>
+            <StatusBox state={state} />
+            <FileSelect files={files} clearPrompt={clearPrompt} />
+          </Box>
+        ) : (
+          <Text>No merge conflicts found.</Text>
+        )}
+      </Box>
+      <Footer hasConflicts={files.length > 0} />
     </Box>
   )
 }

@@ -5,12 +5,16 @@ import Link from 'ink-link'
 
 const StatusBox = function ({ state }) {
   const { repoName } = state
-  console.log(state)
+  const incomingName = state.branches.incoming
+    .map((branch) => {
+      return branch.branches.join(' ')
+    })
+    .join(' / ')
   return (
     <Box
       flexDirection="column"
       alignSelf="start"
-      marginLeft={'15%'}
+      marginLeft={'5%'}
       width="30"
       flexShrink={1}
       minHeight="30"
@@ -18,12 +22,27 @@ const StatusBox = function ({ state }) {
       borderColor="grey"
       backgroundDimColor="red"
     >
-      <Box alignSelf="start">
+      <Box alignSelf="start" paddingLeft={1}>
         <Text color="yellow"> {repoName}</Text>
         <Text color="cyan"> {'/' + state.branches.current}</Text>
       </Box>
-      <Box alignSelf="start" padding={1}>
+      <Box alignSelf="start" padding={1} italic>
+        <Text color="yellow" bold>
+          {' ↯ '}
+        </Text>
         <Text color="whiteDim">Currently in a merge conflict</Text>
+      </Box>
+      <Box
+        flexDirection="row"
+        alignSelf="end"
+        justifyContent="flex-end"
+        width="100%"
+        paddingRight={1}
+      >
+        <Text color="magenta" dim>
+          {' ↯ '}
+          {incomingName}
+        </Text>
       </Box>
     </Box>
   )

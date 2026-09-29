@@ -5,7 +5,7 @@ import Link from 'ink-link'
 
 const Banner = function () {
   return (
-    <Box flexDirection="row" gap={1} justifyContent="space-between" width="100%" maxHeight={3}>
+    <Box flexDirection="row" gap={1} justifyContent="start" maxHeight={3}>
       {/* green name */}
       <Box paddingX={1} paddingY={0} alignSelf="flex-start">
         <Link url="https://github.com/spencermountain/zipper-merge">
