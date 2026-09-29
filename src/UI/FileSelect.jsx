@@ -1,6 +1,7 @@
 import React, { useRef } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { useAppState } from './AppState.jsx'
+import { Show } from './_lib.jsx'
 
 const Simple = function ({ clearPrompt }) {
   const state = useAppState((store) => store.state)

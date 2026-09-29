@@ -7,7 +7,7 @@ const Footer = () => {
   const conflicts = useAppState((store) => store.state.conflicts?.length ?? 0)
   let message = ''
   if (conflicts > 0) {
-    message = ` ${conflicts} File${conflicts > 1 ? 's' : ''} to resolve before continuing`
+    message = ` ${conflicts} file${conflicts > 1 ? 's' : ''} to resolve before continuing`
   } else {
     message = 'Esc exit'
   }
