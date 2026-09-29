@@ -1,0 +1,68 @@
+import test from 'tape'
+import { PassThrough } from 'node:stream'
+import { stripVTControlCharacters } from 'node:util'
+import React from 'react'
+import { render } from 'ink'
+import { register } from 'tsx/esm/api'
+
+// Load the same uncompiled JSX used by the development CLI.
+register()
+const { AppStateProvider, useAppState } = await import('../src/UI/AppState.jsx')
+const { default: FileSelect } = await import('../src/UI/FileSelect.jsx')
+const { default: Footer } = await import('../src/UI/Footer.jsx')
+
+test('app context shares selection and repository updates across components', async (t) => {
+  const stdin = new PassThrough()
+  stdin.isTTY = true
+  stdin.setRawMode = stdin.ref = stdin.unref = () => {}
+  const stdout = new PassThrough()
+  stdout.columns = 100
+  stdout.rows = 40
+  let output = ''
+  stdout.on('data', (chunk) => { output += stripVTControlCharacters(chunk.toString()) })
+  let shared
+  const Observer = () => {
+    shared = useAppState()
+    return null
+  }
+  const initialState = {
+    repoName: 'dummy',
+    conflicts: ['alpha.txt', 'beta.txt'].map((relative) => ({ relative, conflicts: [], error: null }))
+  }
+  let cleared = false
+  const app = render(
+    React.createElement(AppStateProvider, { initialState },
+      React.createElement(Observer),
+      React.createElement(FileSelect, { clearPrompt: () => { cleared = true } }),
+      React.createElement(Footer)
+    ),
+    { stdin, stdout, stderr: stdout, debug: true, interactive: true }
+  )
+  t.teardown(() => { app.unmount(); app.cleanup() })
+  const exited = app.waitUntilExit()
+  const settle = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await app.waitUntilRenderFlush()
+  }
+  await settle()
+  t.equal(shared.selected, 0)
+  t.equal(shared.selectedFile.relative, 'alpha.txt')
+  output = ''
+  stdin.write('\u001b[B')
+  await settle()
+  t.equal(shared.selected, 1, 'keyboard navigation changes shared selection')
+  t.equal(shared.selectedFile.relative, 'beta.txt', 'selectedFile is derived from current state')
+  t.match(output, /continuing1/, 'Footer observes the same selection')
+  output = ''
+  stdin.write('a')
+  await settle()
+  t.equal(shared.selected, 0, 'prefix selection updates context too')
+  t.match(output, /continuing0/)
+  shared.setState((state) => ({ ...state, repoName: 'updated' }))
+  await settle()
+  t.equal(shared.state.repoName, 'updated', 'repository state can be updated through context')
+  t.equal(initialState.repoName, 'dummy', 'initial state remains unchanged')
+  stdin.write('\r')
+  t.equal(await exited, 'alpha.txt', 'Enter uses the shared selected file')
+  t.ok(cleared, 'selection still clears the prompt')
+})

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /* zipper-merge 0.0.1 - MIT */
-import react, { useState, useRef, createElement } from 'react';
-import { useApp, useInput, Text, Box, useStdin, useWindowSize, render } from 'ink';
+import react, { createContext, useState, useContext, useRef, createElement } from 'react';
+import { useApp, useInput, Text, Box, useStdin, render } from 'ink';
+import { useStore } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 import Link from 'ink-link';
 import { promisify } from 'util';
 import { execFile } from 'child_process';
@@ -10,8 +12,50 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { promisify as promisify$1 } from 'node:util';
 
-const Simple = function ({ files, clearPrompt }) {
-  const [selected, setSelected] = useState(0);
+// Update selection and its derived file together, including after a Git refresh.
+const selection = (state, index) => {
+  const files = state.conflicts ?? [];
+  const selected = Math.max(0, Math.min(index, files.length - 1));
+  return { selected, selectedFile: files[selected] ?? null }
+};
+
+// Create one store per app instance so separate renders/tests never share state.
+// Add future shared variables and actions here. Search prefixes stay local to UI.
+const createAppStore = (initialState = {}) => createStore((set) => ({
+  state: initialState,
+  ...selection(initialState, 0),
+  setState: (update) => set((current) => {
+    const state = typeof update === 'function' ? update(current.state) : update;
+    return { state, ...selection(state, current.selected) }
+  }),
+  setSelected: (update) => set((current) => {
+    const index = typeof update === 'function' ? update(current.selected) : update;
+    return selection(current.state, index)
+  })
+}));
+
+const AppStateContext = createContext(null);
+
+// Context carries a stable store reference; Zustand handles reactive updates.
+const AppStateProvider = ({ initialState = {}, children }) => {
+  const [store] = useState(() => createAppStore(initialState));
+
+  return /*#__PURE__*/react.createElement(AppStateContext.Provider, { value: store }, children)
+};
+
+// Prefer selectors: useAppState((store) => store.selected).
+// Without a selector, this subscribes to the full store for compatibility.
+const useAppState = (selector) => {
+  const store = useContext(AppStateContext);
+  if (!store) throw new Error('useAppState must be used inside AppStateProvider')
+  return useStore(store, selector)
+};
+
+const Simple = function ({ clearPrompt }) {
+  const state = useAppState((store) => store.state);
+  const selected = useAppState((store) => store.selected);
+  const setSelected = useAppState((store) => store.setSelected);
+  const files = state.conflicts ?? [];
   const search = useRef({ prefix: '', updatedAt: 0 });
   const { exit } = useApp();
 
@@ -40,9 +84,8 @@ const Simple = function ({ files, clearPrompt }) {
       }
     }
   });
-
   return (
-    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length), /*#__PURE__*/react.createElement(Text, { bold: true }, " Current files with conflicts:")), /*#__PURE__*/react.createElement(Box,
+    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length + ' Files'), /*#__PURE__*/react.createElement(Text, { bold: true }, " to resolve:")), /*#__PURE__*/react.createElement(Box,
         { flexDirection: "column",
         borderTop: false,
         borderLeft: true,
@@ -52,7 +95,14 @@ const Simple = function ({ files, clearPrompt }) {
         borderColor: "gray",
         paddingLeft: 1,
         paddingTop: 1 }, files.map((choice, index) => (
-          /*#__PURE__*/react.createElement(Box, { key: choice.relative, flexDirection: "row", gap: 2, paddingLeft: 1, minHeight: 2 }, /*#__PURE__*/react.createElement(Text, null, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, choice.relative), choice.error?.message && /*#__PURE__*/react.createElement(Text, { dimColor: true }, ` — ${choice.error?.message}`)))
+          /*#__PURE__*/react.createElement(Box,
+            { key: choice.relative,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "start",
+            gap: 2,
+            paddingLeft: 1,
+            minHeight: 2 }, /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Box, { flexDirection: "col", height: 3 }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, "./", choice.relative), /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start", gap: 1, paddingLeft: 3 }, /*#__PURE__*/react.createElement(Text, { color: "white" }, choice.conflicts.length, " "), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: true }, choice.conflicts.length === 1 ? 'merge conflict' : 'merge conflicts'))))
         ))), /*#__PURE__*/react.createElement(Text, { dimColor: true }, selected))
   )
 };
@@ -65,7 +115,8 @@ const Banner = function () {
   )
 };
 
-const StatusBox = function ({ state }) {
+const StatusBox = function () {
+  const state = useAppState((store) => store.state);
   const { repoName } = state;
   const incomingName = state.branches.incoming
     .map((branch) => {
@@ -91,14 +142,24 @@ const StatusBox = function ({ state }) {
   )
 };
 
-const Footer = ({ hasConflicts = false }) => (
-  /*#__PURE__*/react.createElement(Box, { height: 1, flexShrink: 0, paddingX: 1, overflow: "hidden" }, /*#__PURE__*/react.createElement(Text, { dimColor: true, wrap: "truncate-end" }, hasConflicts ? 'Esc exit · ↑/↓ choose file · Enter select' : 'Esc exit'))
-);
+const Footer = () => {
+  const selected = useAppState((store) => store.selected);
+  const conflicts = useAppState((store) => store.state.conflicts?.length ?? 0);
+  let message = '';
+  if (conflicts > 0) {
+    message = ` ${conflicts} File${conflicts > 1 ? 's' : ''} to resolve before continuing`;
+  } else {
+    message = 'Esc exit';
+  }
+  return (
+    /*#__PURE__*/react.createElement(Box, { height: 1, flexShrink: 0, paddingX: 1, overflow: "hidden" }, /*#__PURE__*/react.createElement(Text, { dimColor: true, wrap: "truncate-end" }, "⟫⟫", message, selected))
+  )
+};
 
-const App = function ({ state = {}, clearPrompt }) {
+const AppContent = function ({ clearPrompt }) {
+  const state = useAppState((store) => store.state);
   const { exit } = useApp();
   const { isRawModeSupported } = useStdin();
-  const { rows } = useWindowSize();
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -108,16 +169,19 @@ const App = function ({ state = {}, clearPrompt }) {
     },
     { isActive: isRawModeSupported }
   );
-
   const { conflicts: files = [] } = state;
   return (
-    /*#__PURE__*/react.createElement(Box, { width: "100%", height: rows, overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
-          /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, { state: state }), /*#__PURE__*/react.createElement(Simple, { files: files, clearPrompt: clearPrompt }))
+    /*#__PURE__*/react.createElement(Box, { width: "100%", overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
+          /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, null), /*#__PURE__*/react.createElement(Simple, { clearPrompt: clearPrompt }))
         ) : (
           /*#__PURE__*/react.createElement(Text, null, "No merge conflicts found.")
-        )), /*#__PURE__*/react.createElement(Footer, { hasConflicts: files.length > 0 }))
+        )), /*#__PURE__*/react.createElement(Footer, null))
   )
 };
+
+const App = ({ state, clearPrompt }) => (
+  /*#__PURE__*/react.createElement(AppStateProvider, { initialState: state }, /*#__PURE__*/react.createElement(AppContent, { clearPrompt: clearPrompt }))
+);
 
 const runFile$3 = promisify(execFile);
 

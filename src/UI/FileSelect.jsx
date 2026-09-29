@@ -1,9 +1,12 @@
-import React, { useRef, useState } from 'react'
+import React, { useRef } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
-import { Row } from './_lib.jsx'
+import { useAppState } from './AppState.jsx'
 
-const Simple = function ({ files, clearPrompt }) {
-  const [selected, setSelected] = useState(0)
+const Simple = function ({ clearPrompt }) {
+  const state = useAppState((store) => store.state)
+  const selected = useAppState((store) => store.selected)
+  const setSelected = useAppState((store) => store.setSelected)
+  const files = state.conflicts ?? []
   const search = useRef({ prefix: '', updatedAt: 0 })
   const { exit } = useApp()
 
@@ -32,14 +35,13 @@ const Simple = function ({ files, clearPrompt }) {
       }
     }
   })
-
   return (
     <Box flexDirection="column" paddingTop={2} paddingBottom={2} paddingLeft={'2%'}>
       <Box flexDirection="row" alignItems="center" justifyContent="start">
         <Text color="red" dim>
-          {files.length}
+          {files.length + ' Files'}
         </Text>
-        <Text bold> Current files with conflicts:</Text>
+        <Text bold> to resolve:</Text>
       </Box>
       <Box
         flexDirection="column"
@@ -53,15 +55,40 @@ const Simple = function ({ files, clearPrompt }) {
         paddingTop={1}
       >
         {files.map((choice, index) => (
-          <Box key={choice.relative} flexDirection="row" gap={2} paddingLeft={1} minHeight={2}>
-            <Text>{index === selected ? '●' : '○'}</Text>
+          <Box
+            key={choice.relative}
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="start"
+            gap={2}
+            paddingLeft={1}
+            minHeight={2}
+          >
+            {/* picker UI */}
             <Text color={index === selected ? 'cyan' : undefined}>
-              {/* <Text bold={index === selected}>{'↯ '}</Text>*/}
-              <Text color="red" underline bold={index === selected}>
-                {choice.relative}
-              </Text>
-              {choice.error?.message && <Text dimColor>{` — ${choice.error?.message}`}</Text>}
+              {index === selected ? '●' : '○'}
             </Text>
+            <Box flexDirection="col" height={3}>
+              <Box flexDirection="row" justifyContent="start">
+                <Text color="red" underline bold={index === selected}>
+                  ./{choice.relative}
+                </Text>
+                <Text dimColor={index !== selected} color="white">
+                  {' ❯'}
+                </Text>
+              </Box>
+              <Box flexDirection="row" justifyContent="start" paddingLeft={3}>
+                <Text color="white" dimColor>
+                  ╰─
+                </Text>
+                <Text color="white" dimColor={index !== selected}>
+                  {' ' + choice.conflicts.length}{' '}
+                </Text>
+                <Text color="white" dimColor={index !== selected}>
+                  {choice.conflicts.length === 1 ? 'conflict' : 'conflicts'}
+                </Text>
+              </Box>
+            </Box>
           </Box>
         ))}
       </Box>

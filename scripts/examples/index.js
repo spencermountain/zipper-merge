@@ -2,12 +2,14 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import simple from './simple.js'
 import multi from './multi.js'
+import many from './many.js'
 import multiStep from './multi-step.js'
 import clean from './clean.js'
 
 const scenarios = new Map([
   ['simple', simple],
   ['multi', multi],
+  ['many', many],
   ['multi-step', multiStep],
   ['clean', clean]
 ])
@@ -27,7 +29,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (scenario === 'multi-step') {
       console.log('\nResolve menu.txt, then git add menu.txt && git -c core.editor=true cherry-pick --continue.\nNext, resolve config/settings.json and continue again. Cancel with git cherry-pick --abort.')
     }
-    console.log('\nEach conflict:* command deletes and recreates this dummy, including your edits.')
+    console.log('\nEach dummy:* command deletes and recreates this dummy, including your edits.')
   } catch (error) {
     console.error(error.message)
     process.exitCode = 1

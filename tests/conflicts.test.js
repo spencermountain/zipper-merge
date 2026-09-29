@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createScenario } from '../scripts/examples/index.js'
+import getConflicts from '../src/lib/conflicts.js'
 
 test('dummy scenarios reset and produce real Git conflicts', (t) => {
   const temporary = mkdtempSync(join(tmpdir(), 'zipper-scenarios-'))
@@ -51,4 +52,16 @@ test('dummy scenarios reset and produce real Git conflicts', (t) => {
   t.throws(() => createScenario('clean', unrelated), /Refusing to reset/, 'unmarked folders are protected')
   t.equal(readFileSync(join(unrelated, 'keep-me'), 'utf8'), 'safe', 'unrelated files survive')
   t.end()
+})
+
+test('many scenario produces exactly 40 separate conflicts in ten files', async (t) => {
+  const temporary = mkdtempSync(join(tmpdir(), 'zipper-many-'))
+  t.teardown(() => rmSync(temporary, { recursive: true, force: true }))
+  const cwd = createScenario('many', join(temporary, 'dummy'))
+  const files = await getConflicts({ cwd })
+  t.equal(files.length, 10, 'ten files are unmerged')
+  t.ok(files.every((file) => file.error === null), 'every file parses successfully')
+  t.deepEqual(files.map((file) => file.conflicts.length), [1, 1, 2, 2, 3, 3, 4, 6, 8, 10], 'Git keeps the intended blocks separate')
+  t.equal(files.reduce((count, file) => count + file.conflicts.length, 0), 40)
+  t.ok(existsSync(join(cwd, '.git/MERGE_HEAD')), 'leaves a real merge pending')
 })

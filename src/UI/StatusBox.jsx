@@ -1,9 +1,9 @@
 import React from 'react'
 import { Box, Text } from 'ink'
-import version from '../_version.js'
-import Link from 'ink-link'
+import { useAppState } from './AppState.jsx'
 
-const StatusBox = function ({ state }) {
+const StatusBox = function () {
+  const state = useAppState((store) => store.state)
   const { repoName } = state
   const incomingName = state.branches.incoming
     .map((branch) => {

@@ -5,13 +5,14 @@
   "scripts": {
     "build": "node ./scripts/version.js && rollup -c",
     "start": "node builds/index.js",
-    "dev": "node src/index.js",
+    "dev": "pnpm --dir dummy dev",
     "watch": "pnpm --dir dummy watch",
     "test": "npm run build && tape \"tests/*.test.js\" | tap-dancer",
     "prepack": "npm run build",
     "test:package": "npm test",
     "dummy:simple": "node scripts/examples/index.js simple",
     "dummy:multi": "node scripts/examples/index.js multi",
+    "dummy:many": "node scripts/examples/index.js many",
     "dummy:multi-step": "node scripts/examples/index.js multi-step",
     "dummy:clean": "node scripts/examples/index.js clean"
   },
@@ -37,7 +38,8 @@
   "dependencies": {
     "ink": "^7.1.1",
     "ink-link": "^5.0.0",
-    "react": "^19.2.0"
+    "react": "^19.2.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "rollup": "^4.63.5",
