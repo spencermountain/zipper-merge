@@ -5,7 +5,7 @@
   "minimumReleaseAge": "1 day",
   "scripts": {
     "build": "rollup -c",
-    "watch": "node --import tsx scratch.jsx",
+    "watch": "node src/index.js",
     "watch:stay": "node --watch --watch-preserve-output --import tsx scratch.jsx",
     "test": "npm run build && tape \"tests/*.test.js\" | tap-dancer",
     "lint": "eslint .",

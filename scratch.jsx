@@ -1,7 +1,7 @@
 // node --import tsx playground/components/Table/scratch.jsx
 import React from 'react'
 import { useApp, useInput, render } from 'ink'
-import App from './src/Index.jsx'
+import App from './src/UI/App.jsx'
 
 
 function Scratch() {

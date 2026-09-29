@@ -1,2 +1,2 @@
 # zipper-merge
-CLI tool to help with merge conflicts
+experimental CLI tool to help with merge conflicts
