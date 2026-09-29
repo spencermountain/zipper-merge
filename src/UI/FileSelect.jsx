@@ -1,20 +1,19 @@
 import React, { useRef } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
-import { useAppState } from './AppState.jsx'
+import { useAppState } from './store.js'
 import ClickableColumn, { isMouseInput } from './lib/ClickableColumn.jsx'
 import { ScrollList } from 'ink-scroll-list'
 
 const Simple = function ({ clearPrompt, mouseEnabled = false }) {
   const gitState = useAppState((store) => store.gitState)
   const selected = useAppState((store) => store.selected)
-  const setSelected = useAppState((store) => store.setSelected)
   const files = gitState.conflicts ?? []
   const search = useRef({ prefix: '', updatedAt: 0 })
   const { exit } = useApp()
   const confirmSelection = (index) => {
     const file = files[index]
     if (!file) return
-    setSelected(index)
+    useAppState.setState({ selected: index })
     clearPrompt()
     exit(file.relative)
   }
@@ -26,10 +25,10 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
       exit(new Error('Selection cancelled'))
     } else if (key.upArrow) {
       search.current.prefix = ''
-      setSelected((index) => Math.max(0, index - 1))
+      useAppState.setState(({ selected }) => ({ selected: selected - 1 }))
     } else if (key.downArrow) {
       search.current.prefix = ''
-      setSelected((index) => Math.max(0, Math.min(index + 1, files.length - 1)))
+      useAppState.setState(({ selected }) => ({ selected: selected + 1 }))
     } else if (key.return) {
       confirmSelection(selected)
     } else if (input && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input)) {
@@ -40,7 +39,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         choice.relative.toLowerCase().startsWith(search.current.prefix)
       )
       if (match !== -1) {
-        setSelected(match)
+        useAppState.setState({ selected: match })
       }
     }
   })
@@ -52,9 +51,9 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         </Text>
         <Text bold> to resolve:</Text>
       </Box>
-      <ScrollList
+      <Box
         flexDirection="column"
-        selectedIndex={selected}
+        // selectedIndex={selected}
         enabled={mouseEnabled}
         hoverBorder
         onClick={(index) => {
@@ -68,8 +67,8 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         maxWidth={50}
         borderRight={false}
         borderColor="gray"
-        height={20}
-        overflowY="hidden"
+        // height={20}
+        // overflowY="hidden"
         paddingLeft={1}
         paddingTop={1}
       >
@@ -81,7 +80,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
             justifyContent="start"
             gap={2}
             paddingLeft={1}
-            minHeight={4}
+            minHeight={3}
           >
             {/* picker UI */}
             <Text color={index === selected ? 'cyan' : undefined}>
@@ -110,8 +109,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
             </Box>
           </Box>
         ))}
-      </ScrollList>
-      <Text dimColor>{selected}</Text>
+      </Box>
     </Box>
   )
 }

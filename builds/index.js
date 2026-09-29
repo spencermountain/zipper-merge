@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /* zipper-merge 0.0.1 - MIT */
-import react, { createContext, useState, useContext, Children, useRef, useEffect, createElement } from 'react';
-import { useStdout, useStdin, useInput, measureElement, Box, useApp, Text, useWindowSize, render } from 'ink';
-import { useStore } from 'zustand';
-import { createStore } from 'zustand/vanilla';
+import react, { useRef, createElement } from 'react';
+import { useApp, useInput, Text, Box, useStdin, useWindowSize, render } from 'ink';
+import { create } from 'zustand';
+import 'ink-scroll-list';
 import Link from 'ink-link';
 import { promisify } from 'util';
 import { execFile } from 'child_process';
@@ -12,165 +12,32 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { promisify as promisify$1 } from 'node:util';
 
-// Update selection and its derived file together, including after a Git refresh.
-const selection = (gitState, index) => {
-  const files = gitState.conflicts ?? [];
-  const selected = Math.max(0, Math.min(index, files.length - 1));
-  return { selected, selectedFile: files[selected] ?? null }
-};
-
-// Create one store per app instance so separate renders/tests never share gitState.
-// Add future shared variables and actions here. Search prefixes stay local to UI.
-const createAppStore = (initialGitState = {}) => createStore((set) => ({
-  gitState: initialGitState,
-  ...selection(initialGitState, 0),
-  setGitState: (update) => set((current) => {
-    const gitState = typeof update === 'function' ? update(current.gitState) : update;
-    return { gitState, ...selection(gitState, current.selected) }
-  }),
-  setSelected: (update) => set((current) => {
-    const index = typeof update === 'function' ? update(current.selected) : update;
-    return selection(current.gitState, index)
-  })
+const useAppState = create(() => ({
+  gitState: { conflicts: [] },
+  selected: 0
 }));
 
-const AppStateContext = createContext(null);
-
-// Context carries a stable store reference; Zustand handles reactive updates.
-const AppStateProvider = ({ initialGitState = {}, children }) => {
-  const [store] = useState(() => createAppStore(initialGitState));
-
-  return /*#__PURE__*/react.createElement(AppStateContext.Provider, { value: store }, children)
-};
-
-// Prefer selectors: useAppState((store) => store.selected).
-// Without a selector, this subscribes to the full store for compatibility.
-const useAppState = (selector) => {
-  const store = useContext(AppStateContext);
-  if (!store) throw new Error('useAppState must be used inside AppStateProvider')
-  return useStore(store, selector)
-};
+// Keep selection valid when a refresh removes files or a caller sets an index.
+useAppState.subscribe(({ gitState, selected }) => {
+  const lastIndex = (gitState.conflicts?.length ?? 0) - 1;
+  const next = Math.max(0, Math.min(selected, lastIndex));
+  if (next !== selected) useAppState.setState({ selected: next });
+});
 
 // Ink removes the leading Escape before delivering an unknown CSI sequence.
 const mouseReport = /^\[<(\d+);(\d+);(\d+)([Mm])$/;
 const isMouseInput = (input) => mouseReport.test(input);
 
-// Multiple mounted columns share terminal reporting without disabling each other.
-const users = new WeakMap();
-const invisibleBorder = {
-  top: ' ',
-  bottom: ' ',
-  left: ' ',
-  right: ' ',
-  topLeft: ' ',
-  topRight: ' ',
-  bottomLeft: ' ',
-  bottomRight: ' '
-};
-
-// Each direct child is a clickable item. onClick receives its zero-based index.
-// Requires an alternate screen with no Static output above the live layout.
-// onHover receives an index, or null when the pointer leaves all items.
-const ClickableColumn = ({
-  children,
-  onClick,
-  onHover,
-  hoverBorder = false,
-  enabled = true,
-  ...props
-}) => {
-  const items = Children.toArray(children);
-  const refs = useRef([]);
-  const [hovered, setHovered] = useState(null);
-  const hoverRef = useRef(null);
-  const hoverCallback = useRef(onHover);
-  hoverCallback.current = onHover;
-  const { stdout } = useStdout();
-  const { isRawModeSupported } = useStdin();
-  const active = Boolean(enabled && stdout.isTTY && isRawModeSupported);
-
-  const updateHover = (index) => {
-    if (hoverRef.current === index) return
-    hoverRef.current = index;
-    setHovered(index);
-    hoverCallback.current?.(index);
-  };
-
-  useEffect(() => {
-    updateHover(null);
-    const reset = () => updateHover(null);
-    stdout.on('resize', reset);
-    return () => {
-      stdout.off('resize', reset);
-    }
-  }, [stdout, active]);
-
-  useEffect(() => {
-    if (!active) return
-    const count = users.get(stdout) ?? 0;
-    // Any-motion reporting includes movement with no button held (hover).
-    if (count === 0) stdout.write('\u001b[?1003h\u001b[?1006h');
-    users.set(stdout, count + 1);
-    return () => {
-      const remaining = users.get(stdout) - 1;
-      if (remaining === 0) {
-        stdout.write('\u001b[?1003l\u001b[?1006l');
-        users.delete(stdout);
-      } else {
-        users.set(stdout, remaining);
-      }
-    }
-  }, [stdout, active]);
-
-  useInput(
-    (input) => {
-      const mouse = mouseReport.exec(input);
-      if (!mouse) return
-      const x = Number(mouse[2]) - 1;
-      const y = Number(mouse[3]) - 1;
-      const index = items.findIndex((item, index) => {
-        const node = refs.current[index];
-        if (!node) return false
-        const bounds = measureElement(node);
-        return (
-          x >= bounds.x &&
-          x < bounds.x + bounds.width &&
-          y >= bounds.y &&
-          y < bounds.y + bounds.height
-        )
-      });
-      updateHover(index === -1 ? null : index);
-      if (index !== -1 && mouse[1] === '0' && mouse[4] === 'M') onClick?.(index);
-    },
-    { isActive: active }
-  );
-
-  return (
-    /*#__PURE__*/react.createElement(Box, Object.assign({}, props, { flexDirection: "column" }), items.map((child, index) => (
-        /*#__PURE__*/react.createElement(Box,
-          { key: child.key ?? index,
-          ref: (node) => {
-            refs.current[index] = node;
-          },
-          flexDirection: "column",
-          flexShrink: 0,
-          borderStyle: hoverBorder ? (active && hovered === index ? 'single' : invisibleBorder) : undefined,
-          borderColor: "grey" }, child)
-      )))
-  )
-};
-
 const Simple = function ({ clearPrompt, mouseEnabled = false }) {
   const gitState = useAppState((store) => store.gitState);
   const selected = useAppState((store) => store.selected);
-  const setSelected = useAppState((store) => store.setSelected);
   const files = gitState.conflicts ?? [];
   const search = useRef({ prefix: '', updatedAt: 0 });
   const { exit } = useApp();
   const confirmSelection = (index) => {
     const file = files[index];
     if (!file) return
-    setSelected(index);
+    useAppState.setState({ selected: index });
     clearPrompt();
     exit(file.relative);
   };
@@ -182,10 +49,10 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
       exit(new Error('Selection cancelled'));
     } else if (key.upArrow) {
       search.current.prefix = '';
-      setSelected((index) => (index - 1 + files.length) % files.length);
+      useAppState.setState(({ selected }) => ({ selected: selected - 1 }));
     } else if (key.downArrow) {
       search.current.prefix = '';
-      setSelected((index) => (index + 1) % files.length);
+      useAppState.setState(({ selected }) => ({ selected: selected + 1 }));
     } else if (key.return) {
       confirmSelection(selected);
     } else if (input && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input)) {
@@ -196,13 +63,15 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         choice.relative.toLowerCase().startsWith(search.current.prefix)
       );
       if (match !== -1) {
-        setSelected(match);
+        useAppState.setState({ selected: match });
       }
     }
   });
   return (
-    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length + ' Files'), /*#__PURE__*/react.createElement(Text, { bold: true }, " to resolve:")), /*#__PURE__*/react.createElement(ClickableColumn,
-        { enabled: mouseEnabled,
+    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length + ' Files'), /*#__PURE__*/react.createElement(Text, { bold: true }, " to resolve:")), /*#__PURE__*/react.createElement(Box,
+        { flexDirection: "column",
+        // selectedIndex={selected}
+        enabled: mouseEnabled,
         hoverBorder: true,
         onClick: (index) => {
           search.current.prefix = '';
@@ -215,6 +84,8 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         maxWidth: 50,
         borderRight: false,
         borderColor: "gray",
+        // height={20}
+        // overflowY="hidden"
         paddingLeft: 1,
         paddingTop: 1 }, files.map((choice, index) => (
           /*#__PURE__*/react.createElement(Box,
@@ -224,8 +95,8 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
             justifyContent: "start",
             gap: 2,
             paddingLeft: 1,
-            height: 2 }, /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Box, { flexDirection: "col", height: 3 }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, "./", choice.relative), /*#__PURE__*/react.createElement(Text, { dimColor: index !== selected, color: "white" }, ' ❯')), /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start", paddingLeft: 3 }, /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: true }, "╰─"), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, ' ' + choice.conflicts.length, ' '), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, choice.conflicts.length === 1 ? 'conflict' : 'conflicts'))))
-        ))), /*#__PURE__*/react.createElement(Text, { dimColor: true }, selected))
+            minHeight: 3 }, /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Box, { flexDirection: "col", height: 3 }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, "./", choice.relative), /*#__PURE__*/react.createElement(Text, { dimColor: index !== selected, color: "white" }, ' ❯')), /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start", paddingLeft: 3 }, /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: true }, "╰─"), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, ' ' + choice.conflicts.length, ' '), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, choice.conflicts.length === 1 ? 'conflict' : 'conflicts'))))
+        ))))
   )
 };
 
@@ -278,7 +149,7 @@ const Footer = () => {
   )
 };
 
-const AppContent = function ({ clearPrompt, mouseEnabled }) {
+const App = function ({ clearPrompt, mouseEnabled = false }) {
   const gitState = useAppState((store) => store.gitState);
   const { exit } = useApp();
   const { isRawModeSupported } = useStdin();
@@ -293,18 +164,15 @@ const AppContent = function ({ clearPrompt, mouseEnabled }) {
     { isActive: isRawModeSupported }
   );
   const { conflicts: files = [] } = gitState;
+  //  maxHeight={mouseEnabled ? rows : undefined}
   return (
-    /*#__PURE__*/react.createElement(Box, { width: "100%", maxHeight: mouseEnabled ? rows : undefined, overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
+    /*#__PURE__*/react.createElement(Box, { width: "100%", overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
           /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, null), /*#__PURE__*/react.createElement(Simple, { clearPrompt: clearPrompt, mouseEnabled: mouseEnabled }))
         ) : (
           /*#__PURE__*/react.createElement(Text, null, "No merge conflicts found.")
         )), /*#__PURE__*/react.createElement(Footer, null))
   )
 };
-
-const App = ({ gitState, clearPrompt, mouseEnabled = false }) => (
-  /*#__PURE__*/react.createElement(AppStateProvider, { initialGitState: gitState }, /*#__PURE__*/react.createElement(AppContent, { clearPrompt: clearPrompt, mouseEnabled: mouseEnabled }))
-);
 
 const runFile$3 = promisify(execFile);
 
@@ -592,13 +460,14 @@ const getState = async (options = {}) => {
 try {
   await checkGitEnvironment();
   const gitState = await getState();
+  useAppState.setState({ gitState, selected: 0 });
   if (gitState.conflicts.length === 0) {
     console.log('No merge conflicts found.');
   } else {
     checkInteractiveTerminal();
     const app = render(
-      createElement(App, { gitState, clearPrompt: () => app.clear(), mouseEnabled: true }),
-      { alternateScreen: true }
+      createElement(App, { clearPrompt: () => app.clear(), mouseEnabled: true }),
+      { alternateScreen: false }
     );
   }
 } catch (error) {

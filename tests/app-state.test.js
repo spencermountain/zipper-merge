@@ -7,11 +7,11 @@ import { register } from 'tsx/esm/api'
 
 // Load the same uncompiled JSX used by the development CLI.
 register()
-const { AppStateProvider, useAppState } = await import('../src/UI/AppState.jsx')
+const { useAppState } = await import('../src/UI/store.js')
 const { default: FileSelect } = await import('../src/UI/FileSelect.jsx')
 const { default: Footer } = await import('../src/UI/Footer.jsx')
 
-test('app context shares selection and repository updates across components', async (t) => {
+test('app store shares selection and repository updates across components', async (t) => {
   const stdin = new PassThrough()
   stdin.isTTY = true
   stdin.setRawMode = stdin.ref = stdin.unref = () => {}
@@ -30,8 +30,10 @@ test('app context shares selection and repository updates across components', as
     conflicts: ['alpha.txt', 'beta.txt'].map((relative) => ({ relative, conflicts: [], error: null }))
   }
   let cleared = false
+  useAppState.setState({ gitState: initialGitState, selected: 0 })
+  t.teardown(() => useAppState.setState(useAppState.getInitialState(), true))
   const app = render(
-    React.createElement(AppStateProvider, { initialGitState },
+    React.createElement(React.Fragment, null,
       React.createElement(Observer),
       React.createElement(FileSelect, { clearPrompt: () => { cleared = true } }),
       React.createElement(Footer)
@@ -46,21 +48,21 @@ test('app context shares selection and repository updates across components', as
   }
   await settle()
   t.equal(shared.selected, 0)
-  t.equal(shared.selectedFile.relative, 'alpha.txt')
+  t.equal(shared.gitState.conflicts[shared.selected].relative, 'alpha.txt')
   output = ''
   stdin.write('\u001b[B')
   await settle()
   t.equal(shared.selected, 1, 'keyboard navigation changes shared selection')
-  t.equal(shared.selectedFile.relative, 'beta.txt', 'selectedFile is derived from current state')
+  t.equal(shared.gitState.conflicts[shared.selected].relative, 'beta.txt', 'selectedFile is derived from current state')
   t.match(output, /2 files to resolve before continuing/, 'Footer remains visible during selection')
   output = ''
   stdin.write('a')
   await settle()
-  t.equal(shared.selected, 0, 'prefix selection updates context too')
+  t.equal(shared.selected, 0, 'prefix selection updates the store too')
   t.match(output, /2 files to resolve before continuing/)
-  shared.setGitState((gitState) => ({ ...gitState, repoName: 'updated' }))
+  useAppState.setState(({ gitState }) => ({ gitState: { ...gitState, repoName: 'updated' } }))
   await settle()
-  t.equal(shared.gitState.repoName, 'updated', 'repository state can be updated through context')
+  t.equal(shared.gitState.repoName, 'updated', 'repository state can be updated through the store')
   t.equal(initialGitState.repoName, 'dummy', 'initial state remains unchanged')
   stdin.write('\r')
   t.equal(await exited, 'alpha.txt', 'Enter uses the shared selected file')

@@ -1,6 +1,6 @@
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useAppState } from './AppState.jsx'
+import { useAppState } from './store.js'
 
 const Footer = () => {
   const selected = useAppState((store) => store.selected)

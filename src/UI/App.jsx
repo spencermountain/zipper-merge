@@ -4,9 +4,9 @@ import FileSelect from './FileSelect.jsx'
 import Header from './Header.jsx'
 import StatusBox from './StatusBox.jsx'
 import Footer from './Footer.jsx'
-import { AppStateProvider, useAppState } from './AppState.jsx'
+import { useAppState } from './store.js'
 
-const AppContent = function ({ clearPrompt, mouseEnabled }) {
+const App = function ({ clearPrompt, mouseEnabled = false }) {
   const gitState = useAppState((store) => store.gitState)
   const { exit } = useApp()
   const { isRawModeSupported } = useStdin()
@@ -21,8 +21,9 @@ const AppContent = function ({ clearPrompt, mouseEnabled }) {
     { isActive: isRawModeSupported }
   )
   const { conflicts: files = [] } = gitState
+  //  maxHeight={mouseEnabled ? rows : undefined}
   return (
-    <Box width="100%" maxHeight={mouseEnabled ? rows : undefined} overflow="hidden" flexDirection="column">
+    <Box width="100%" overflow="hidden" flexDirection="column">
       <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
         <Header />
         {files.length > 0 ? (
@@ -38,11 +39,5 @@ const AppContent = function ({ clearPrompt, mouseEnabled }) {
     </Box>
   )
 }
-
-const App = ({ gitState, clearPrompt, mouseEnabled = false }) => (
-  <AppStateProvider initialGitState={gitState}>
-    <AppContent clearPrompt={clearPrompt} mouseEnabled={mouseEnabled} />
-  </AppStateProvider>
-)
 
 export default App

@@ -6,7 +6,7 @@ import { Box, render } from 'ink'
 import { register } from 'tsx/esm/api'
 
 register()
-const { AppStateProvider, useAppState } = await import('../src/UI/AppState.jsx')
+const { useAppState } = await import('../src/UI/store.js')
 const { default: FileSelect } = await import('../src/UI/FileSelect.jsx')
 
 test('mouse clicks confirm measured rows using the Enter action', async (t) => {
@@ -29,7 +29,9 @@ test('mouse clicks confirm measured rows using the Enter action', async (t) => {
     conflicts: ['alpha.txt', 'beta.txt'].map((relative) => ({ relative, conflicts: [] }))
   }
   let cleared = 0
-  const app = render(React.createElement(AppStateProvider, { initialGitState },
+  useAppState.setState({ gitState: initialGitState, selected: 0 })
+  t.teardown(() => useAppState.setState(useAppState.getInitialState(), true))
+  const app = render(React.createElement(React.Fragment, null,
     React.createElement(Observer),
     React.createElement(Box, { paddingTop: 2, paddingLeft: 4 },
       React.createElement(FileSelect, { mouseEnabled: true, clearPrompt: () => { cleared += 1 } })

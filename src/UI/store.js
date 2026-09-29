@@ -1,23 +1,13 @@
-import { createStore } from 'zustand/vanilla'
+import { create } from 'zustand'
 
-// Update selection and its derived file together, including after a Git refresh.
-const selection = (gitState, index) => {
-  const files = gitState.conflicts ?? []
-  const selected = Math.max(0, Math.min(index, files.length - 1))
-  return { selected, selectedFile: files[selected] ?? null }
-}
-
-// Create one store per app instance so separate renders/tests never share gitState.
-// Add future shared variables and actions here. Search prefixes stay local to UI.
-export const createAppStore = (initialGitState = {}) => createStore((set) => ({
-  gitState: initialGitState,
-  ...selection(initialGitState, 0),
-  setGitState: (update) => set((current) => {
-    const gitState = typeof update === 'function' ? update(current.gitState) : update
-    return { gitState, ...selection(gitState, current.selected) }
-  }),
-  setSelected: (update) => set((current) => {
-    const index = typeof update === 'function' ? update(current.selected) : update
-    return selection(current.gitState, index)
-  })
+export const useAppState = create(() => ({
+  gitState: { conflicts: [] },
+  selected: 0
 }))
+
+// Keep selection valid when a refresh removes files or a caller sets an index.
+useAppState.subscribe(({ gitState, selected }) => {
+  const lastIndex = (gitState.conflicts?.length ?? 0) - 1
+  const next = Math.max(0, Math.min(selected, lastIndex))
+  if (next !== selected) useAppState.setState({ selected: next })
+})
