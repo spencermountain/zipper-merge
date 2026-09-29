@@ -7,7 +7,7 @@ import Footer from './Footer.jsx'
 import { AppStateProvider, useAppState } from './AppState.jsx'
 
 const AppContent = function ({ clearPrompt, mouseEnabled }) {
-  const state = useAppState((store) => store.state)
+  const gitState = useAppState((store) => store.gitState)
   const { exit } = useApp()
   const { isRawModeSupported } = useStdin()
   const { rows } = useWindowSize()
@@ -20,7 +20,7 @@ const AppContent = function ({ clearPrompt, mouseEnabled }) {
     },
     { isActive: isRawModeSupported }
   )
-  const { conflicts: files = [] } = state
+  const { conflicts: files = [] } = gitState
   return (
     <Box width="100%" maxHeight={mouseEnabled ? rows : undefined} overflow="hidden" flexDirection="column">
       <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
@@ -39,8 +39,8 @@ const AppContent = function ({ clearPrompt, mouseEnabled }) {
   )
 }
 
-const App = ({ state, clearPrompt, mouseEnabled = false }) => (
-  <AppStateProvider initialState={state}>
+const App = ({ gitState, clearPrompt, mouseEnabled = false }) => (
+  <AppStateProvider initialGitState={gitState}>
     <AppContent clearPrompt={clearPrompt} mouseEnabled={mouseEnabled} />
   </AppStateProvider>
 )

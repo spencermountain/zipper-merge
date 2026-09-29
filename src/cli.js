@@ -6,13 +6,13 @@ import { getState } from './lib/git.js'
 
 try {
   await checkGitEnvironment()
-  const state = await getState()
-  if (state.conflicts.length === 0) {
+  const gitState = await getState()
+  if (gitState.conflicts.length === 0) {
     console.log('No merge conflicts found.')
   } else {
     checkInteractiveTerminal()
     const app = render(
-      createElement(App, { state, clearPrompt: () => app.clear(), mouseEnabled: true }),
+      createElement(App, { gitState, clearPrompt: () => app.clear(), mouseEnabled: true }),
       { alternateScreen: true }
     )
   }

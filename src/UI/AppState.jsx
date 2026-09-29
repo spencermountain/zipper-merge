@@ -5,8 +5,8 @@ import { createAppStore } from './store.js'
 const AppStateContext = createContext(null)
 
 // Context carries a stable store reference; Zustand handles reactive updates.
-export const AppStateProvider = ({ initialState = {}, children }) => {
-  const [store] = useState(() => createAppStore(initialState))
+export const AppStateProvider = ({ initialGitState = {}, children }) => {
+  const [store] = useState(() => createAppStore(initialGitState))
 
   return <AppStateContext.Provider value={store}>{children}</AppStateContext.Provider>
 }

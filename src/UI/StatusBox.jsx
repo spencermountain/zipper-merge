@@ -3,9 +3,9 @@ import { Box, Text } from 'ink'
 import { useAppState } from './AppState.jsx'
 
 const StatusBox = function () {
-  const state = useAppState((store) => store.state)
-  const { repoName } = state
-  const incomingName = state.branches.incoming
+  const gitState = useAppState((store) => store.gitState)
+  const { repoName } = gitState
+  const incomingName = gitState.branches.incoming
     .map((branch) => {
       return branch.branches.join(' ')
     })
@@ -24,7 +24,7 @@ const StatusBox = function () {
     >
       <Box alignSelf="start" paddingLeft={1}>
         <Text color="yellow"> {repoName}</Text>
-        <Text color="cyan"> {'/' + state.branches.current}</Text>
+        <Text color="cyan"> {'/' + gitState.branches.current}</Text>
       </Box>
       <Box alignSelf="start" padding={1} italic>
         <Text color="yellow" bold>

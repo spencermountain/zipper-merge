@@ -25,11 +25,11 @@ test('mouse clicks confirm measured rows using the Enter action', async (t) => {
   })
   let shared
   const Observer = () => { shared = useAppState(); return null }
-  const initialState = {
+  const initialGitState = {
     conflicts: ['alpha.txt', 'beta.txt'].map((relative) => ({ relative, conflicts: [] }))
   }
   let cleared = 0
-  const app = render(React.createElement(AppStateProvider, { initialState },
+  const app = render(React.createElement(AppStateProvider, { initialGitState },
     React.createElement(Observer),
     React.createElement(Box, { paddingTop: 2, paddingLeft: 4 },
       React.createElement(FileSelect, { mouseEnabled: true, clearPrompt: () => { cleared += 1 } })
@@ -39,7 +39,7 @@ test('mouse clicks confirm measured rows using the Enter action', async (t) => {
   const exited = app.waitUntilExit()
   const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
   await settle()
-  t.ok(raw.includes('\u001b[?1000h\u001b[?1006h'), 'enables SGR button reporting')
+  t.ok(raw.includes('\u001b[?1003h\u001b[?1006h'), 'enables SGR mouse motion reporting')
   const betaLine = frame.split('\n').findIndex((line) => line.includes('./beta.txt'))
   const click = (button, y, suffix = 'M') => stdin.write(`\u001b[<${button};10;${y}${suffix}`)
   click(0, 1)
@@ -61,11 +61,11 @@ test('mouse clicks confirm measured rows using the Enter action', async (t) => {
   click(0, resizedLine + 1)
   t.equal(await exited, 'beta.txt', 'click confirms the clicked file immediately, even when another row was selected')
   t.equal(cleared, 1, 'click clears the prompt exactly once, like Enter')
-  t.ok(raw.includes('\u001b[?1000l\u001b[?1006l'), 'restores normal mouse behavior on exit')
+  t.ok(raw.includes('\u001b[?1003l\u001b[?1006l'), 'restores normal mouse behavior on exit')
 })
 
 test('ClickableColumn calls back with an index without imposing a selection action', async (t) => {
-  const { default: ClickableColumn } = await import('../src/UI/ClickableColumn.jsx')
+  const { default: ClickableColumn } = await import('../src/UI/lib/ClickableColumn.jsx')
   const { Text } = await import('ink')
   const stdin = new PassThrough()
   stdin.isTTY = true
@@ -95,4 +95,59 @@ test('ClickableColumn calls back with an index without imposing a selection acti
   stdin.write('\u001b[<0;1;4M')
   await settle()
   t.deepEqual(clicked, [1, 0], 'disabled column does not invoke the callback')
+})
+
+test('hover borders appear without shifting rows or triggering clicks', async (t) => {
+  const { default: ClickableColumn } = await import('../src/UI/lib/ClickableColumn.jsx')
+  const { Text } = await import('ink')
+  const stdin = new PassThrough()
+  stdin.isTTY = true
+  stdin.setRawMode = stdin.ref = stdin.unref = () => {}
+  const stdout = new PassThrough()
+  stdout.isTTY = true
+  stdout.columns = 50
+  stdout.rows = 24
+  let frame = ''
+  stdout.on('data', (chunk) => {
+    if (chunk.toString().includes('Second')) frame = stripVTControlCharacters(chunk.toString())
+  })
+  const hovered = []
+  let clicks = 0
+  const content = (enabled) => React.createElement(ClickableColumn, {
+    enabled, hoverBorder: true, onHover: (index) => hovered.push(index),
+    onClick: () => { clicks += 1 }
+  },
+  React.createElement(Text, null, 'First'),
+  React.createElement(Text, null, 'Second'))
+  const app = render(content(true), { stdin, stdout, stderr: stdout, debug: true, interactive: true })
+  t.teardown(() => { app.unmount(); app.cleanup() })
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
+  await settle()
+  const secondLine = frame.split('\n').findIndex((line) => line.includes('Second'))
+  t.notOk(frame.includes('┌'), 'borders are invisible initially')
+  const move = () => stdin.write(`\u001b[<35;3;${secondLine + 1}M`)
+  move()
+  await settle()
+  t.deepEqual(hovered, [1], 'onHover receives the zero-based index')
+  t.ok(frame.includes('┌'), 'hovered item shows its border')
+  t.equal(frame.split('\n').findIndex((line) => line.includes('Second')), secondLine, 'border does not shift the item')
+  t.equal(clicks, 0, 'hover does not confirm a selection')
+  move()
+  await settle()
+  t.deepEqual(hovered, [1], 'movement inside the same row does not repeat callbacks')
+  stdin.write('\u001b[<35;3;20M')
+  await settle()
+  t.deepEqual(hovered, [1, null], 'leaving the column clears hover')
+  t.notOk(frame.includes('┌'), 'border becomes invisible on leave')
+  move()
+  await settle()
+  stdout.emit('resize')
+  await settle()
+  t.equal(hovered.at(-1), null, 'resize clears stale hover coordinates')
+  move()
+  await settle()
+  app.rerender(content(false))
+  await settle()
+  t.equal(hovered.at(-1), null, 'disabling mouse clears hover')
+  t.notOk(frame.includes('┌'), 'disabled column has no visible hover border')
 })

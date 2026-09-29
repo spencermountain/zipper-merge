@@ -25,13 +25,13 @@ test('app context shares selection and repository updates across components', as
     shared = useAppState()
     return null
   }
-  const initialState = {
+  const initialGitState = {
     repoName: 'dummy',
     conflicts: ['alpha.txt', 'beta.txt'].map((relative) => ({ relative, conflicts: [], error: null }))
   }
   let cleared = false
   const app = render(
-    React.createElement(AppStateProvider, { initialState },
+    React.createElement(AppStateProvider, { initialGitState },
       React.createElement(Observer),
       React.createElement(FileSelect, { clearPrompt: () => { cleared = true } }),
       React.createElement(Footer)
@@ -58,10 +58,10 @@ test('app context shares selection and repository updates across components', as
   await settle()
   t.equal(shared.selected, 0, 'prefix selection updates context too')
   t.match(output, /2 files to resolve before continuing/)
-  shared.setState((state) => ({ ...state, repoName: 'updated' }))
+  shared.setGitState((gitState) => ({ ...gitState, repoName: 'updated' }))
   await settle()
-  t.equal(shared.state.repoName, 'updated', 'repository state can be updated through context')
-  t.equal(initialState.repoName, 'dummy', 'initial state remains unchanged')
+  t.equal(shared.gitState.repoName, 'updated', 'repository state can be updated through context')
+  t.equal(initialGitState.repoName, 'dummy', 'initial state remains unchanged')
   stdin.write('\r')
   t.equal(await exited, 'alpha.txt', 'Enter uses the shared selected file')
   t.ok(cleared, 'selection still clears the prompt')

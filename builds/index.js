@@ -13,32 +13,32 @@ import { join, basename } from 'node:path';
 import { promisify as promisify$1 } from 'node:util';
 
 // Update selection and its derived file together, including after a Git refresh.
-const selection = (state, index) => {
-  const files = state.conflicts ?? [];
+const selection = (gitState, index) => {
+  const files = gitState.conflicts ?? [];
   const selected = Math.max(0, Math.min(index, files.length - 1));
   return { selected, selectedFile: files[selected] ?? null }
 };
 
-// Create one store per app instance so separate renders/tests never share state.
+// Create one store per app instance so separate renders/tests never share gitState.
 // Add future shared variables and actions here. Search prefixes stay local to UI.
-const createAppStore = (initialState = {}) => createStore((set) => ({
-  state: initialState,
-  ...selection(initialState, 0),
-  setState: (update) => set((current) => {
-    const state = typeof update === 'function' ? update(current.state) : update;
-    return { state, ...selection(state, current.selected) }
+const createAppStore = (initialGitState = {}) => createStore((set) => ({
+  gitState: initialGitState,
+  ...selection(initialGitState, 0),
+  setGitState: (update) => set((current) => {
+    const gitState = typeof update === 'function' ? update(current.gitState) : update;
+    return { gitState, ...selection(gitState, current.selected) }
   }),
   setSelected: (update) => set((current) => {
     const index = typeof update === 'function' ? update(current.selected) : update;
-    return selection(current.state, index)
+    return selection(current.gitState, index)
   })
 }));
 
 const AppStateContext = createContext(null);
 
 // Context carries a stable store reference; Zustand handles reactive updates.
-const AppStateProvider = ({ initialState = {}, children }) => {
-  const [store] = useState(() => createAppStore(initialState));
+const AppStateProvider = ({ initialGitState = {}, children }) => {
+  const [store] = useState(() => createAppStore(initialGitState));
 
   return /*#__PURE__*/react.createElement(AppStateContext.Provider, { value: store }, children)
 };
@@ -57,25 +57,64 @@ const isMouseInput = (input) => mouseReport.test(input);
 
 // Multiple mounted columns share terminal reporting without disabling each other.
 const users = new WeakMap();
+const invisibleBorder = {
+  top: ' ',
+  bottom: ' ',
+  left: ' ',
+  right: ' ',
+  topLeft: ' ',
+  topRight: ' ',
+  bottomLeft: ' ',
+  bottomRight: ' '
+};
 
 // Each direct child is a clickable item. onClick receives its zero-based index.
 // Requires an alternate screen with no Static output above the live layout.
-const ClickableColumn = ({ children, onClick, enabled = true, ...props }) => {
+// onHover receives an index, or null when the pointer leaves all items.
+const ClickableColumn = ({
+  children,
+  onClick,
+  onHover,
+  hoverBorder = false,
+  enabled = true,
+  ...props
+}) => {
   const items = Children.toArray(children);
   const refs = useRef([]);
+  const [hovered, setHovered] = useState(null);
+  const hoverRef = useRef(null);
+  const hoverCallback = useRef(onHover);
+  hoverCallback.current = onHover;
   const { stdout } = useStdout();
   const { isRawModeSupported } = useStdin();
   const active = Boolean(enabled && stdout.isTTY && isRawModeSupported);
 
+  const updateHover = (index) => {
+    if (hoverRef.current === index) return
+    hoverRef.current = index;
+    setHovered(index);
+    hoverCallback.current?.(index);
+  };
+
+  useEffect(() => {
+    updateHover(null);
+    const reset = () => updateHover(null);
+    stdout.on('resize', reset);
+    return () => {
+      stdout.off('resize', reset);
+    }
+  }, [stdout, active]);
+
   useEffect(() => {
     if (!active) return
     const count = users.get(stdout) ?? 0;
-    if (count === 0) stdout.write('\u001b[?1000h\u001b[?1006h');
+    // Any-motion reporting includes movement with no button held (hover).
+    if (count === 0) stdout.write('\u001b[?1003h\u001b[?1006h');
     users.set(stdout, count + 1);
     return () => {
       const remaining = users.get(stdout) - 1;
       if (remaining === 0) {
-        stdout.write('\u001b[?1000l\u001b[?1006l');
+        stdout.write('\u001b[?1003l\u001b[?1006l');
         users.delete(stdout);
       } else {
         users.set(stdout, remaining);
@@ -83,37 +122,49 @@ const ClickableColumn = ({ children, onClick, enabled = true, ...props }) => {
     }
   }, [stdout, active]);
 
-  useInput((input) => {
-    const mouse = mouseReport.exec(input);
-    if (!mouse || mouse[1] !== '0' || mouse[4] !== 'M') return
-    const x = Number(mouse[2]) - 1;
-    const y = Number(mouse[3]) - 1;
-    const index = items.findIndex((item, index) => {
-      const node = refs.current[index];
-      if (!node) return false
-      const bounds = measureElement(node);
-      return x >= bounds.x && x < bounds.x + bounds.width &&
-        y >= bounds.y && y < bounds.y + bounds.height
-    });
-    if (index !== -1) onClick?.(index);
-  }, { isActive: active });
+  useInput(
+    (input) => {
+      const mouse = mouseReport.exec(input);
+      if (!mouse) return
+      const x = Number(mouse[2]) - 1;
+      const y = Number(mouse[3]) - 1;
+      const index = items.findIndex((item, index) => {
+        const node = refs.current[index];
+        if (!node) return false
+        const bounds = measureElement(node);
+        return (
+          x >= bounds.x &&
+          x < bounds.x + bounds.width &&
+          y >= bounds.y &&
+          y < bounds.y + bounds.height
+        )
+      });
+      updateHover(index === -1 ? null : index);
+      if (index !== -1 && mouse[1] === '0' && mouse[4] === 'M') onClick?.(index);
+    },
+    { isActive: active }
+  );
 
   return (
     /*#__PURE__*/react.createElement(Box, Object.assign({}, props, { flexDirection: "column" }), items.map((child, index) => (
         /*#__PURE__*/react.createElement(Box,
           { key: child.key ?? index,
-          ref: (node) => { refs.current[index] = node; },
+          ref: (node) => {
+            refs.current[index] = node;
+          },
           flexDirection: "column",
-          flexShrink: 0 }, child)
+          flexShrink: 0,
+          borderStyle: hoverBorder ? (active && hovered === index ? 'single' : invisibleBorder) : undefined,
+          borderColor: "grey" }, child)
       )))
   )
 };
 
 const Simple = function ({ clearPrompt, mouseEnabled = false }) {
-  const state = useAppState((store) => store.state);
+  const gitState = useAppState((store) => store.gitState);
   const selected = useAppState((store) => store.selected);
   const setSelected = useAppState((store) => store.setSelected);
-  const files = state.conflicts ?? [];
+  const files = gitState.conflicts ?? [];
   const search = useRef({ prefix: '', updatedAt: 0 });
   const { exit } = useApp();
   const confirmSelection = (index) => {
@@ -152,6 +203,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
   return (
     /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length + ' Files'), /*#__PURE__*/react.createElement(Text, { bold: true }, " to resolve:")), /*#__PURE__*/react.createElement(ClickableColumn,
         { enabled: mouseEnabled,
+        hoverBorder: true,
         onClick: (index) => {
           search.current.prefix = '';
           confirmSelection(index);
@@ -160,6 +212,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         borderLeft: true,
         borderStyle: "single",
         borderBottom: false,
+        maxWidth: 50,
         borderRight: false,
         borderColor: "gray",
         paddingLeft: 1,
@@ -171,7 +224,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
             justifyContent: "start",
             gap: 2,
             paddingLeft: 1,
-            minHeight: 2 }, /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Box, { flexDirection: "col", height: 3 }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, "./", choice.relative), /*#__PURE__*/react.createElement(Text, { dimColor: index !== selected, color: "white" }, ' ❯')), /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start", paddingLeft: 3 }, /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: true }, "╰─"), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, ' ' + choice.conflicts.length, ' '), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, choice.conflicts.length === 1 ? 'conflict' : 'conflicts'))))
+            height: 2 }, /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Box, { flexDirection: "col", height: 3 }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, "./", choice.relative), /*#__PURE__*/react.createElement(Text, { dimColor: index !== selected, color: "white" }, ' ❯')), /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start", paddingLeft: 3 }, /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: true }, "╰─"), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, ' ' + choice.conflicts.length, ' '), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, choice.conflicts.length === 1 ? 'conflict' : 'conflicts'))))
         ))), /*#__PURE__*/react.createElement(Text, { dimColor: true }, selected))
   )
 };
@@ -185,9 +238,9 @@ const Banner = function () {
 };
 
 const StatusBox = function () {
-  const state = useAppState((store) => store.state);
-  const { repoName } = state;
-  const incomingName = state.branches.incoming
+  const gitState = useAppState((store) => store.gitState);
+  const { repoName } = gitState;
+  const incomingName = gitState.branches.incoming
     .map((branch) => {
       return branch.branches.join(' ')
     })
@@ -202,7 +255,7 @@ const StatusBox = function () {
       maxHeight: "16",
       borderStyle: "round",
       borderColor: "grey",
-      backgroundDimColor: "red" }, /*#__PURE__*/react.createElement(Box, { alignSelf: "start", paddingLeft: 1 }, /*#__PURE__*/react.createElement(Text, { color: "yellow" }, " ", repoName), /*#__PURE__*/react.createElement(Text, { color: "cyan" }, " ", '/' + state.branches.current)), /*#__PURE__*/react.createElement(Box, { alignSelf: "start", padding: 1, italic: true }, /*#__PURE__*/react.createElement(Text, { color: "yellow", bold: true }, ' ↯ '), /*#__PURE__*/react.createElement(Text, { color: "whiteDim" }, "Currently in a merge conflict")), /*#__PURE__*/react.createElement(Box,
+      backgroundDimColor: "red" }, /*#__PURE__*/react.createElement(Box, { alignSelf: "start", paddingLeft: 1 }, /*#__PURE__*/react.createElement(Text, { color: "yellow" }, " ", repoName), /*#__PURE__*/react.createElement(Text, { color: "cyan" }, " ", '/' + gitState.branches.current)), /*#__PURE__*/react.createElement(Box, { alignSelf: "start", padding: 1, italic: true }, /*#__PURE__*/react.createElement(Text, { color: "yellow", bold: true }, ' ↯ '), /*#__PURE__*/react.createElement(Text, { color: "whiteDim" }, "Currently in a merge conflict")), /*#__PURE__*/react.createElement(Box,
         { flexDirection: "row",
         alignSelf: "end",
         justifyContent: "flex-end",
@@ -213,7 +266,7 @@ const StatusBox = function () {
 
 const Footer = () => {
   useAppState((store) => store.selected);
-  const conflicts = useAppState((store) => store.state.conflicts?.length ?? 0);
+  const conflicts = useAppState((store) => store.gitState.conflicts?.length ?? 0);
   let message = '';
   if (conflicts > 0) {
     message = ` ${conflicts} file${conflicts > 1 ? 's' : ''} to resolve before continuing`;
@@ -226,7 +279,7 @@ const Footer = () => {
 };
 
 const AppContent = function ({ clearPrompt, mouseEnabled }) {
-  const state = useAppState((store) => store.state);
+  const gitState = useAppState((store) => store.gitState);
   const { exit } = useApp();
   const { isRawModeSupported } = useStdin();
   const { rows } = useWindowSize();
@@ -239,7 +292,7 @@ const AppContent = function ({ clearPrompt, mouseEnabled }) {
     },
     { isActive: isRawModeSupported }
   );
-  const { conflicts: files = [] } = state;
+  const { conflicts: files = [] } = gitState;
   return (
     /*#__PURE__*/react.createElement(Box, { width: "100%", maxHeight: mouseEnabled ? rows : undefined, overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
           /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, null), /*#__PURE__*/react.createElement(Simple, { clearPrompt: clearPrompt, mouseEnabled: mouseEnabled }))
@@ -249,8 +302,8 @@ const AppContent = function ({ clearPrompt, mouseEnabled }) {
   )
 };
 
-const App = ({ state, clearPrompt, mouseEnabled = false }) => (
-  /*#__PURE__*/react.createElement(AppStateProvider, { initialState: state }, /*#__PURE__*/react.createElement(AppContent, { clearPrompt: clearPrompt, mouseEnabled: mouseEnabled }))
+const App = ({ gitState, clearPrompt, mouseEnabled = false }) => (
+  /*#__PURE__*/react.createElement(AppStateProvider, { initialGitState: gitState }, /*#__PURE__*/react.createElement(AppContent, { clearPrompt: clearPrompt, mouseEnabled: mouseEnabled }))
 );
 
 const runFile$3 = promisify(execFile);
@@ -538,13 +591,13 @@ const getState = async (options = {}) => {
 
 try {
   await checkGitEnvironment();
-  const state = await getState();
-  if (state.conflicts.length === 0) {
+  const gitState = await getState();
+  if (gitState.conflicts.length === 0) {
     console.log('No merge conflicts found.');
   } else {
     checkInteractiveTerminal();
     const app = render(
-      createElement(App, { state, clearPrompt: () => app.clear(), mouseEnabled: true }),
+      createElement(App, { gitState, clearPrompt: () => app.clear(), mouseEnabled: true }),
       { alternateScreen: true }
     );
   }
