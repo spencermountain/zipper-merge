@@ -2,17 +2,18 @@
   "name": "zipper-merge",
   "version": "0.0.1",
   "description": "CLI tool to help with merge conflicts",
-  "minimumReleaseAge": "1 day",
   "scripts": {
-    "build": "rollup -c",
-    "watch": "node src/index.js",
-    "watch:stay": "node --watch --watch-preserve-output --import tsx scratch.jsx",
+    "build": "node ./scripts/version.js && rollup -c",
+    "start": "node builds/index.js",
+    "dev": "node src/index.js",
+    "watch": "pnpm --dir dummy watch",
     "test": "npm run build && tape \"tests/*.test.js\" | tap-dancer",
-    "lint": "eslint .",
     "prepack": "npm run build",
-    "record": "node scripts/demos/index.js",
-    "test:package": "npm test && npm run test:types",
-    "test:types": "tsc -p tests/types/tsconfig.json"
+    "test:package": "npm test",
+    "dummy:simple": "node scripts/examples/index.js simple",
+    "dummy:multi": "node scripts/examples/index.js multi",
+    "dummy:multi-step": "node scripts/examples/index.js multi-step",
+    "dummy:clean": "node scripts/examples/index.js clean"
   },
   "type": "module",
   "main": "./builds/index.js",
@@ -21,8 +22,7 @@
     "url": "https://github.com/spencermountain/zipper-merge.git"
   },
   "files": [
-    "builds",
-    "types"
+    "builds/index.js"
   ],
   "engines": {
     "node": ">=22"
@@ -35,33 +35,22 @@
     "printWidth": 100
   },
   "dependencies": {
-    "spacetime": "^7.15.0"
+    "ink": "^7.1.1",
+    "ink-link": "^5.0.0",
+    "react": "^19.2.0"
   },
   "devDependencies": {
-    "@rollup/plugin-node-resolve": "^16.0.3",
-    "@types/node": "^26.6.3",
-    "@types/react": "^19.3.0",
-    "eslint": "10.11.0",
-    "ink": "^7.1.1",
-    "react": "^19.2.0",
     "rollup": "^4.63.5",
-    "rollup-plugin-filesize-check": "^2.0.1",
-    "tap-dancer": "0.4.3",
+    "tap-dancer": "^0.4.3",
     "tape": "^5.10.2",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "tsx": "^4.23.15"
   },
   "license": "MIT",
   "exports": {
-    ".": {
-      "types": "./types/index.d.ts",
-      "default": "./builds/index.js"
-    },
+    ".": "./builds/index.js",
     "./package.json": "./package.json"
   },
-  "peerDependencies": {
-    "ink": "^7.1.1",
-    "react": "^19.2.0"
-  },
-  "types": "./types/index.d.ts"
+  "bin": {
+    "zipper-merge": "./builds/index.js"
+  }
 }

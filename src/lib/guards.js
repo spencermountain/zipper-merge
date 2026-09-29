@@ -1,7 +1,6 @@
 import { promisify } from 'util'
 import { exec, execFile } from 'child_process'
 
-export const runCmd = promisify(exec)
 const runFile = promisify(execFile)
 
 export const checkGitInstalled = async (options = {}) => {
@@ -46,13 +45,7 @@ export const checkGitBranch = async (options = {}) => {
   }
 }
 
-export const checkGitEnvironment = async (options = {}) => {
-  await checkGitInstalled(options)
-  await checkGitRepository(options)
-  return checkGitBranch(options)
-}
-
-export const checkInteractiveTerminal = (stdin = process.stdin, stdout = process.stdout) => {
+const checkInteractiveTerminal = (stdin = process.stdin, stdout = process.stdout) => {
   if (!stdin.isTTY || !stdout.isTTY) {
     throw new Error(
       'File selection requires an interactive terminal. Run zipper-merge without piping input or output.'
@@ -60,7 +53,10 @@ export const checkInteractiveTerminal = (stdin = process.stdin, stdout = process
   }
 }
 
-export const getConflicts = async (options = {}) => {
-  const { stdout } = await runFile('git', ['diff', '--name-only', '--diff-filter=U', '-z'], options)
-  return stdout.split('\0').filter(Boolean)
+export const checkGitEnvironment = async (options = {}) => {
+  await checkGitInstalled(options)
+  await checkGitRepository(options)
+  checkInteractiveTerminal()
+  return await checkGitBranch(options)
 }
+

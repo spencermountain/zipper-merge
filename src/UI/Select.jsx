@@ -32,13 +32,12 @@ const Simple = function ({ title, description, choices, clearPrompt }) {
 
   return (
     <Box flexDirection="column" paddingTop={2} paddingBottom={2} paddingLeft={1}>
-      <Row>
+      <Box flexDirection="row" alignItems="center" justifyContent="start" gap={3}>
         <Text bold>{title || ''}</Text>
         <Text dimColor>{description || ''}</Text>
-      </Row>
+      </Box>
       <Box
         flexDirection="column"
-        borderStyle="single"
         borderTop={false}
         borderBottom={false}
         borderRight={false}
@@ -47,7 +46,7 @@ const Simple = function ({ title, description, choices, clearPrompt }) {
       >
         {choices.map((choice, index) => (
           <Text key={choice.id} color={index === selected ? 'cyan' : undefined}>
-            <Text bold>{`${index === selected ? '●' : '○'} ${choice.label}`}</Text>
+            <Text bold color="red">{`${index === selected ? '●' : '○'} ${choice.label}`}</Text>
             {choice.description && <Text dimColor>{` — ${choice.description}`}</Text>}
           </Text>
         ))}

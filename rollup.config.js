@@ -1,24 +1,16 @@
 import { readFileSync } from 'node:fs'
-import { nodeResolve } from '@rollup/plugin-node-resolve'
-import sizeCheck from 'rollup-plugin-filesize-check'
+import { isBuiltin } from 'node:module'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
-const peers = Object.keys(pkg.peerDependencies)
+const dependencies = Object.keys(pkg.dependencies)
 
 export default {
-  input: 'src/Index.jsx',
+  input: 'src/cli.js',
   jsx: 'react',
-  external: (id) => peers.some((name) => id === name || id.startsWith(`${name}/`)),
-  plugins: [
-    nodeResolve(),
-    sizeCheck({
-      expect: 60, // sizes in kb
-      warn: 15, // acceptable change (+/-)
-      throw: 25 // unacceptable change (+/-)
-    })
-  ],
+  external: (id) =>
+    isBuiltin(id) || dependencies.some((name) => id === name || id.startsWith(`${name}/`)),
   output: {
-    banner: `/* spencermountain/${pkg.name} ${pkg.version} - ${pkg.license} */\n`,
+    banner: `#!/usr/bin/env node\n/* ${pkg.name} ${pkg.version} - ${pkg.license} */`,
     file: 'builds/index.js',
     format: 'es',
     sourcemap: false
