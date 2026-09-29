@@ -1,7 +1,17 @@
-import { runCmd, getConflicts } from './lib/index.js'
+import { createElement } from 'react'
+import { render } from 'ink'
+import { register } from 'tsx/esm/api'
+import { checkGitEnvironment, checkInteractiveTerminal, getConflicts } from './lib/index.js'
 
-let conflicts = await getConflicts()
-console.log(conflicts, 'conflicts')
+try {
+  await checkGitEnvironment()
+  const conflicts = await getConflicts()
+  if (conflicts.length > 0) checkInteractiveTerminal()
 
-const cmd = 'node --import tsx ./src/UI/App.jsx'
-await runCmd(cmd)
+  register()
+  const { default: App } = await import('./UI/App.jsx')
+  const app = render(createElement(App, { conflicts, clearPrompt: () => app.clear() }))
+} catch (error) {
+  console.error(`zipper-merge: ${error.message}`)
+  process.exitCode = 1
+}
