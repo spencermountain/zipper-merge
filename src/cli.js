@@ -11,7 +11,10 @@ try {
     console.log('No merge conflicts found.')
   } else {
     checkInteractiveTerminal()
-    const app = render(createElement(App, { state, clearPrompt: () => app.clear() }))
+    const app = render(
+      createElement(App, { state, clearPrompt: () => app.clear(), mouseEnabled: true }),
+      { alternateScreen: true }
+    )
   }
 } catch (error) {
   console.error(`zipper-merge: ${error.message}`)

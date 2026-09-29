@@ -1,17 +1,25 @@
 import React, { useRef } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { useAppState } from './AppState.jsx'
-import { Show } from './_lib.jsx'
+import ClickableColumn, { isMouseInput } from './ClickableColumn.jsx'
 
-const Simple = function ({ clearPrompt }) {
+const Simple = function ({ clearPrompt, mouseEnabled = false }) {
   const state = useAppState((store) => store.state)
   const selected = useAppState((store) => store.selected)
   const setSelected = useAppState((store) => store.setSelected)
   const files = state.conflicts ?? []
   const search = useRef({ prefix: '', updatedAt: 0 })
   const { exit } = useApp()
+  const confirmSelection = (index) => {
+    const file = files[index]
+    if (!file) return
+    setSelected(index)
+    clearPrompt()
+    exit(file.relative)
+  }
 
   useInput((input, key) => {
+    if (isMouseInput(input)) return // ClickableColumn handles mouse reports.
     if (key.escape) return // App handles Escape globally.
     if (key.ctrl && input === 'c') {
       exit(new Error('Selection cancelled'))
@@ -22,8 +30,7 @@ const Simple = function ({ clearPrompt }) {
       search.current.prefix = ''
       setSelected((index) => (index + 1) % files.length)
     } else if (key.return) {
-      clearPrompt()
-      exit(files[selected].relative)
+      confirmSelection(selected)
     } else if (input && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input)) {
       const now = Date.now()
       const prefix = now - search.current.updatedAt > 700 ? '' : search.current.prefix
@@ -44,8 +51,12 @@ const Simple = function ({ clearPrompt }) {
         </Text>
         <Text bold> to resolve:</Text>
       </Box>
-      <Box
-        flexDirection="column"
+      <ClickableColumn
+        enabled={mouseEnabled}
+        onClick={(index) => {
+          search.current.prefix = ''
+          confirmSelection(index)
+        }}
         borderTop={false}
         borderLeft={true}
         borderStyle="single"
@@ -59,7 +70,7 @@ const Simple = function ({ clearPrompt }) {
           <Box
             key={choice.relative}
             flexDirection="row"
-            alignItems="center"
+            alignItems="start"
             justifyContent="start"
             gap={2}
             paddingLeft={1}
@@ -92,7 +103,7 @@ const Simple = function ({ clearPrompt }) {
             </Box>
           </Box>
         ))}
-      </Box>
+      </ClickableColumn>
       <Text dimColor>{selected}</Text>
     </Box>
   )

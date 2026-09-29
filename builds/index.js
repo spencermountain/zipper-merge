@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* zipper-merge 0.0.1 - MIT */
-import react, { createContext, useState, useContext, useRef, createElement } from 'react';
-import { useApp, useInput, Text, Box, useStdin, render } from 'ink';
+import react, { createContext, useState, useContext, Children, useRef, useEffect, createElement } from 'react';
+import { useStdout, useStdin, useInput, measureElement, Box, useApp, Text, useWindowSize, render } from 'ink';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import Link from 'ink-link';
@@ -51,15 +51,81 @@ const useAppState = (selector) => {
   return useStore(store, selector)
 };
 
-const Simple = function ({ clearPrompt }) {
+// Ink removes the leading Escape before delivering an unknown CSI sequence.
+const mouseReport = /^\[<(\d+);(\d+);(\d+)([Mm])$/;
+const isMouseInput = (input) => mouseReport.test(input);
+
+// Multiple mounted columns share terminal reporting without disabling each other.
+const users = new WeakMap();
+
+// Each direct child is a clickable item. onClick receives its zero-based index.
+// Requires an alternate screen with no Static output above the live layout.
+const ClickableColumn = ({ children, onClick, enabled = true, ...props }) => {
+  const items = Children.toArray(children);
+  const refs = useRef([]);
+  const { stdout } = useStdout();
+  const { isRawModeSupported } = useStdin();
+  const active = Boolean(enabled && stdout.isTTY && isRawModeSupported);
+
+  useEffect(() => {
+    if (!active) return
+    const count = users.get(stdout) ?? 0;
+    if (count === 0) stdout.write('\u001b[?1000h\u001b[?1006h');
+    users.set(stdout, count + 1);
+    return () => {
+      const remaining = users.get(stdout) - 1;
+      if (remaining === 0) {
+        stdout.write('\u001b[?1000l\u001b[?1006l');
+        users.delete(stdout);
+      } else {
+        users.set(stdout, remaining);
+      }
+    }
+  }, [stdout, active]);
+
+  useInput((input) => {
+    const mouse = mouseReport.exec(input);
+    if (!mouse || mouse[1] !== '0' || mouse[4] !== 'M') return
+    const x = Number(mouse[2]) - 1;
+    const y = Number(mouse[3]) - 1;
+    const index = items.findIndex((item, index) => {
+      const node = refs.current[index];
+      if (!node) return false
+      const bounds = measureElement(node);
+      return x >= bounds.x && x < bounds.x + bounds.width &&
+        y >= bounds.y && y < bounds.y + bounds.height
+    });
+    if (index !== -1) onClick?.(index);
+  }, { isActive: active });
+
+  return (
+    /*#__PURE__*/react.createElement(Box, Object.assign({}, props, { flexDirection: "column" }), items.map((child, index) => (
+        /*#__PURE__*/react.createElement(Box,
+          { key: child.key ?? index,
+          ref: (node) => { refs.current[index] = node; },
+          flexDirection: "column",
+          flexShrink: 0 }, child)
+      )))
+  )
+};
+
+const Simple = function ({ clearPrompt, mouseEnabled = false }) {
   const state = useAppState((store) => store.state);
   const selected = useAppState((store) => store.selected);
   const setSelected = useAppState((store) => store.setSelected);
   const files = state.conflicts ?? [];
   const search = useRef({ prefix: '', updatedAt: 0 });
   const { exit } = useApp();
+  const confirmSelection = (index) => {
+    const file = files[index];
+    if (!file) return
+    setSelected(index);
+    clearPrompt();
+    exit(file.relative);
+  };
 
   useInput((input, key) => {
+    if (isMouseInput(input)) return // ClickableColumn handles mouse reports.
     if (key.escape) return // App handles Escape globally.
     if (key.ctrl && input === 'c') {
       exit(new Error('Selection cancelled'));
@@ -70,8 +136,7 @@ const Simple = function ({ clearPrompt }) {
       search.current.prefix = '';
       setSelected((index) => (index + 1) % files.length);
     } else if (key.return) {
-      clearPrompt();
-      exit(files[selected].relative);
+      confirmSelection(selected);
     } else if (input && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input)) {
       const now = Date.now();
       const prefix = now - search.current.updatedAt > 700 ? '' : search.current.prefix;
@@ -85,8 +150,12 @@ const Simple = function ({ clearPrompt }) {
     }
   });
   return (
-    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length + ' Files'), /*#__PURE__*/react.createElement(Text, { bold: true }, " to resolve:")), /*#__PURE__*/react.createElement(Box,
-        { flexDirection: "column",
+    /*#__PURE__*/react.createElement(Box, { flexDirection: "column", paddingTop: 2, paddingBottom: 2, paddingLeft: '2%' }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", alignItems: "center", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", dim: true }, files.length + ' Files'), /*#__PURE__*/react.createElement(Text, { bold: true }, " to resolve:")), /*#__PURE__*/react.createElement(ClickableColumn,
+        { enabled: mouseEnabled,
+        onClick: (index) => {
+          search.current.prefix = '';
+          confirmSelection(index);
+        },
         borderTop: false,
         borderLeft: true,
         borderStyle: "single",
@@ -98,11 +167,11 @@ const Simple = function ({ clearPrompt }) {
           /*#__PURE__*/react.createElement(Box,
             { key: choice.relative,
             flexDirection: "row",
-            alignItems: "center",
+            alignItems: "start",
             justifyContent: "start",
             gap: 2,
             paddingLeft: 1,
-            minHeight: 2 }, /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Box, { flexDirection: "col", height: 3 }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, "./", choice.relative), /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start", gap: 1, paddingLeft: 3 }, /*#__PURE__*/react.createElement(Text, { color: "white" }, choice.conflicts.length, " "), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: true }, choice.conflicts.length === 1 ? 'merge conflict' : 'merge conflicts'))))
+            minHeight: 2 }, /*#__PURE__*/react.createElement(Text, { color: index === selected ? 'cyan' : undefined }, index === selected ? '●' : '○'), /*#__PURE__*/react.createElement(Box, { flexDirection: "col", height: 3 }, /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start" }, /*#__PURE__*/react.createElement(Text, { color: "red", underline: true, bold: index === selected }, "./", choice.relative), /*#__PURE__*/react.createElement(Text, { dimColor: index !== selected, color: "white" }, ' ❯')), /*#__PURE__*/react.createElement(Box, { flexDirection: "row", justifyContent: "start", paddingLeft: 3 }, /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: true }, "╰─"), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, ' ' + choice.conflicts.length, ' '), /*#__PURE__*/react.createElement(Text, { color: "white", dimColor: index !== selected }, choice.conflicts.length === 1 ? 'conflict' : 'conflicts'))))
         ))), /*#__PURE__*/react.createElement(Text, { dimColor: true }, selected))
   )
 };
@@ -130,7 +199,7 @@ const StatusBox = function () {
       marginLeft: '5%',
       width: "30",
       flexShrink: 1,
-      minHeight: "30",
+      maxHeight: "16",
       borderStyle: "round",
       borderColor: "grey",
       backgroundDimColor: "red" }, /*#__PURE__*/react.createElement(Box, { alignSelf: "start", paddingLeft: 1 }, /*#__PURE__*/react.createElement(Text, { color: "yellow" }, " ", repoName), /*#__PURE__*/react.createElement(Text, { color: "cyan" }, " ", '/' + state.branches.current)), /*#__PURE__*/react.createElement(Box, { alignSelf: "start", padding: 1, italic: true }, /*#__PURE__*/react.createElement(Text, { color: "yellow", bold: true }, ' ↯ '), /*#__PURE__*/react.createElement(Text, { color: "whiteDim" }, "Currently in a merge conflict")), /*#__PURE__*/react.createElement(Box,
@@ -143,23 +212,24 @@ const StatusBox = function () {
 };
 
 const Footer = () => {
-  const selected = useAppState((store) => store.selected);
+  useAppState((store) => store.selected);
   const conflicts = useAppState((store) => store.state.conflicts?.length ?? 0);
   let message = '';
   if (conflicts > 0) {
-    message = ` ${conflicts} File${conflicts > 1 ? 's' : ''} to resolve before continuing`;
+    message = ` ${conflicts} file${conflicts > 1 ? 's' : ''} to resolve before continuing`;
   } else {
     message = 'Esc exit';
   }
   return (
-    /*#__PURE__*/react.createElement(Box, { height: 1, flexShrink: 0, paddingX: 1, overflow: "hidden" }, /*#__PURE__*/react.createElement(Text, { dimColor: true, wrap: "truncate-end" }, "⟫⟫", message, selected))
+    /*#__PURE__*/react.createElement(Box, { height: 1, flexShrink: 0, paddingX: 1, overflow: "hidden" }, /*#__PURE__*/react.createElement(Text, { dimColor: true, wrap: "truncate-end" }, "⟫⟫", message))
   )
 };
 
-const AppContent = function ({ clearPrompt }) {
+const AppContent = function ({ clearPrompt, mouseEnabled }) {
   const state = useAppState((store) => store.state);
   const { exit } = useApp();
   const { isRawModeSupported } = useStdin();
+  const { rows } = useWindowSize();
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -171,16 +241,16 @@ const AppContent = function ({ clearPrompt }) {
   );
   const { conflicts: files = [] } = state;
   return (
-    /*#__PURE__*/react.createElement(Box, { width: "100%", overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
-          /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, null), /*#__PURE__*/react.createElement(Simple, { clearPrompt: clearPrompt }))
+    /*#__PURE__*/react.createElement(Box, { width: "100%", maxHeight: mouseEnabled ? rows : undefined, overflow: "hidden", flexDirection: "column" }, /*#__PURE__*/react.createElement(Box, { flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, overflow: "hidden" }, /*#__PURE__*/react.createElement(Banner, null), files.length > 0 ? (
+          /*#__PURE__*/react.createElement(Box, { flexDirection: "column", padding: 1 }, /*#__PURE__*/react.createElement(StatusBox, null), /*#__PURE__*/react.createElement(Simple, { clearPrompt: clearPrompt, mouseEnabled: mouseEnabled }))
         ) : (
           /*#__PURE__*/react.createElement(Text, null, "No merge conflicts found.")
         )), /*#__PURE__*/react.createElement(Footer, null))
   )
 };
 
-const App = ({ state, clearPrompt }) => (
-  /*#__PURE__*/react.createElement(AppStateProvider, { initialState: state }, /*#__PURE__*/react.createElement(AppContent, { clearPrompt: clearPrompt }))
+const App = ({ state, clearPrompt, mouseEnabled = false }) => (
+  /*#__PURE__*/react.createElement(AppStateProvider, { initialState: state }, /*#__PURE__*/react.createElement(AppContent, { clearPrompt: clearPrompt, mouseEnabled: mouseEnabled }))
 );
 
 const runFile$3 = promisify(execFile);
@@ -473,7 +543,10 @@ try {
     console.log('No merge conflicts found.');
   } else {
     checkInteractiveTerminal();
-    const app = render(createElement(App, { state, clearPrompt: () => app.clear() }));
+    const app = render(
+      createElement(App, { state, clearPrompt: () => app.clear(), mouseEnabled: true }),
+      { alternateScreen: true }
+    );
   }
 } catch (error) {
   console.error(`zipper-merge: ${error.message}`);
