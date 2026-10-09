@@ -1,19 +1,19 @@
 import React, { useRef } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
-import { useAppState } from './store.js'
+import { useSnapshot } from 'valtio'
+import { appState } from './store.js'
 import ClickableColumn, { isMouseInput } from './lib/ClickableColumn.jsx'
 import { ScrollList } from 'ink-scroll-list'
 
 const Simple = function ({ clearPrompt, mouseEnabled = false }) {
-  const gitState = useAppState((store) => store.gitState)
-  const selected = useAppState((store) => store.selected)
+  const { gitState, selected } = useSnapshot(appState)
   const files = gitState.conflicts ?? []
   const search = useRef({ prefix: '', updatedAt: 0 })
   const { exit } = useApp()
   const confirmSelection = (index) => {
     const file = files[index]
     if (!file) return
-    useAppState.setState({ selected: index })
+    appState.selected = index
     clearPrompt()
     exit(file.relative)
   }
@@ -25,10 +25,10 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
       exit(new Error('Selection cancelled'))
     } else if (key.upArrow) {
       search.current.prefix = ''
-      useAppState.setState(({ selected }) => ({ selected: selected - 1 }))
+      appState.selected -= 1
     } else if (key.downArrow) {
       search.current.prefix = ''
-      useAppState.setState(({ selected }) => ({ selected: selected + 1 }))
+      appState.selected += 1
     } else if (key.return) {
       confirmSelection(selected)
     } else if (input && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input)) {
@@ -39,7 +39,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         choice.relative.toLowerCase().startsWith(search.current.prefix)
       )
       if (match !== -1) {
-        useAppState.setState({ selected: match })
+        appState.selected = match
       }
     }
   })
@@ -64,8 +64,8 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         borderLeft={true}
         borderStyle="single"
         borderBottom={false}
-        maxWidth={50}
         borderRight={false}
+        maxWidth={50}
         borderColor="gray"
         // height={20}
         // overflowY="hidden"

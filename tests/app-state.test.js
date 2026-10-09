@@ -1,4 +1,5 @@
 import test from 'tape'
+import { useSnapshot } from 'valtio'
 import { PassThrough } from 'node:stream'
 import { stripVTControlCharacters } from 'node:util'
 import React from 'react'
@@ -7,7 +8,7 @@ import { register } from 'tsx/esm/api'
 
 // Load the same uncompiled JSX used by the development CLI.
 register()
-const { useAppState } = await import('../src/UI/store.js')
+const { appState } = await import('../src/UI/store.js')
 const { default: FileSelect } = await import('../src/UI/FileSelect.jsx')
 const { default: Footer } = await import('../src/UI/Footer.jsx')
 
@@ -22,7 +23,9 @@ test('app store shares selection and repository updates across components', asyn
   stdout.on('data', (chunk) => { output += stripVTControlCharacters(chunk.toString()) })
   let shared
   const Observer = () => {
-    shared = useAppState()
+    const state = useSnapshot(appState)
+    // Read during render so Valtio tracks the fields this observer watches.
+    shared = { selected: state.selected, gitState: { ...state.gitState } }
     return null
   }
   const initialGitState = {
@@ -30,8 +33,8 @@ test('app store shares selection and repository updates across components', asyn
     conflicts: ['alpha.txt', 'beta.txt'].map((relative) => ({ relative, conflicts: [], error: null }))
   }
   let cleared = false
-  useAppState.setState({ gitState: initialGitState, selected: 0 })
-  t.teardown(() => useAppState.setState(useAppState.getInitialState(), true))
+  Object.assign(appState, { gitState: initialGitState, selected: 0 })
+  t.teardown(() => Object.assign(appState, { gitState: { conflicts: [] }, selected: 0 }))
   const app = render(
     React.createElement(React.Fragment, null,
       React.createElement(Observer),
@@ -60,7 +63,7 @@ test('app store shares selection and repository updates across components', asyn
   await settle()
   t.equal(shared.selected, 0, 'prefix selection updates the store too')
   t.match(output, /2 files to resolve before continuing/)
-  useAppState.setState(({ gitState }) => ({ gitState: { ...gitState, repoName: 'updated' } }))
+  appState.gitState = { ...appState.gitState, repoName: 'updated' }
   await settle()
   t.equal(shared.gitState.repoName, 'updated', 'repository state can be updated through the store')
   t.equal(initialGitState.repoName, 'dummy', 'initial state remains unchanged')

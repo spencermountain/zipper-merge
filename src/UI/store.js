@@ -1,13 +1,14 @@
-import { create } from 'zustand'
+import { proxy, subscribe } from 'valtio'
 
-export const useAppState = create(() => ({
+// Read with useSnapshot(appState) in components; write directly to this proxy.
+export const appState = proxy({
   gitState: { conflicts: [] },
   selected: 0
-}))
-
-// Keep selection valid when a refresh removes files or a caller sets an index.
-useAppState.subscribe(({ gitState, selected }) => {
-  const lastIndex = (gitState.conflicts?.length ?? 0) - 1
-  const next = Math.max(0, Math.min(selected, lastIndex))
-  if (next !== selected) useAppState.setState({ selected: next })
 })
+
+// Clamp immediately, including when files are removed with an array mutation.
+subscribe(appState, () => {
+  const lastIndex = (appState.gitState.conflicts?.length ?? 0) - 1
+  const selected = Math.max(0, Math.min(appState.selected, lastIndex))
+  if (selected !== appState.selected) appState.selected = selected
+}, true)

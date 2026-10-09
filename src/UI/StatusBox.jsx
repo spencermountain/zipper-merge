@@ -1,9 +1,10 @@
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useAppState } from './store.js'
+import { useSnapshot } from 'valtio'
+import { appState } from './store.js'
 
 const StatusBox = function () {
-  const gitState = useAppState((store) => store.gitState)
+  const { gitState } = useSnapshot(appState)
   const { repoName } = gitState
   const incomingName = gitState.branches.incoming
     .map((branch) => {

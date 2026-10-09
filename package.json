@@ -40,7 +40,7 @@
     "ink-link": "^5.0.0",
     "ink-scroll-list": "^0.5.0",
     "react": "^19.2.0",
-    "zustand": "^5.0.15"
+    "valtio": "^2.3.2"
   },
   "devDependencies": {
     "rollup": "^4.63.5",

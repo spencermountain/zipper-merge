@@ -1,4 +1,5 @@
 import test from 'tape'
+import { useSnapshot } from 'valtio'
 import React from 'react'
 import { PassThrough } from 'node:stream'
 import { stripVTControlCharacters } from 'node:util'
@@ -6,7 +7,7 @@ import { Box, render } from 'ink'
 import { register } from 'tsx/esm/api'
 
 register()
-const { useAppState } = await import('../src/UI/store.js')
+const { appState } = await import('../src/UI/store.js')
 const { default: FileSelect } = await import('../src/UI/FileSelect.jsx')
 
 test('mouse clicks confirm measured rows using the Enter action', async (t) => {
@@ -24,13 +25,17 @@ test('mouse clicks confirm measured rows using the Enter action', async (t) => {
     if (chunk.toString().includes('./beta.txt')) frame = stripVTControlCharacters(chunk.toString())
   })
   let shared
-  const Observer = () => { shared = useAppState(); return null }
+  const Observer = () => {
+    const state = useSnapshot(appState)
+    shared = { selected: state.selected }
+    return null
+  }
   const initialGitState = {
     conflicts: ['alpha.txt', 'beta.txt'].map((relative) => ({ relative, conflicts: [] }))
   }
   let cleared = 0
-  useAppState.setState({ gitState: initialGitState, selected: 0 })
-  t.teardown(() => useAppState.setState(useAppState.getInitialState(), true))
+  Object.assign(appState, { gitState: initialGitState, selected: 0 })
+  t.teardown(() => Object.assign(appState, { gitState: { conflicts: [] }, selected: 0 }))
   const app = render(React.createElement(React.Fragment, null,
     React.createElement(Observer),
     React.createElement(Box, { paddingTop: 2, paddingLeft: 4 },

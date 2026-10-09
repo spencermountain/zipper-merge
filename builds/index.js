@@ -2,7 +2,7 @@
 /* zipper-merge 0.0.1 - MIT */
 import react, { useRef, createElement } from 'react';
 import { useApp, useInput, Text, Box, useStdin, useWindowSize, render } from 'ink';
-import { create } from 'zustand';
+import { proxy, subscribe, useSnapshot } from 'valtio';
 import 'ink-scroll-list';
 import Link from 'ink-link';
 import { promisify } from 'util';
@@ -12,32 +12,32 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { promisify as promisify$1 } from 'node:util';
 
-const useAppState = create(() => ({
+// Read with useSnapshot(appState) in components; write directly to this proxy.
+const appState = proxy({
   gitState: { conflicts: [] },
   selected: 0
-}));
-
-// Keep selection valid when a refresh removes files or a caller sets an index.
-useAppState.subscribe(({ gitState, selected }) => {
-  const lastIndex = (gitState.conflicts?.length ?? 0) - 1;
-  const next = Math.max(0, Math.min(selected, lastIndex));
-  if (next !== selected) useAppState.setState({ selected: next });
 });
+
+// Clamp immediately, including when files are removed with an array mutation.
+subscribe(appState, () => {
+  const lastIndex = (appState.gitState.conflicts?.length ?? 0) - 1;
+  const selected = Math.max(0, Math.min(appState.selected, lastIndex));
+  if (selected !== appState.selected) appState.selected = selected;
+}, true);
 
 // Ink removes the leading Escape before delivering an unknown CSI sequence.
 const mouseReport = /^\[<(\d+);(\d+);(\d+)([Mm])$/;
 const isMouseInput = (input) => mouseReport.test(input);
 
 const Simple = function ({ clearPrompt, mouseEnabled = false }) {
-  const gitState = useAppState((store) => store.gitState);
-  const selected = useAppState((store) => store.selected);
+  const { gitState, selected } = useSnapshot(appState);
   const files = gitState.conflicts ?? [];
   const search = useRef({ prefix: '', updatedAt: 0 });
   const { exit } = useApp();
   const confirmSelection = (index) => {
     const file = files[index];
     if (!file) return
-    useAppState.setState({ selected: index });
+    appState.selected = index;
     clearPrompt();
     exit(file.relative);
   };
@@ -49,10 +49,10 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
       exit(new Error('Selection cancelled'));
     } else if (key.upArrow) {
       search.current.prefix = '';
-      useAppState.setState(({ selected }) => ({ selected: selected - 1 }));
+      appState.selected -= 1;
     } else if (key.downArrow) {
       search.current.prefix = '';
-      useAppState.setState(({ selected }) => ({ selected: selected + 1 }));
+      appState.selected += 1;
     } else if (key.return) {
       confirmSelection(selected);
     } else if (input && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input)) {
@@ -63,7 +63,7 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         choice.relative.toLowerCase().startsWith(search.current.prefix)
       );
       if (match !== -1) {
-        useAppState.setState({ selected: match });
+        appState.selected = match;
       }
     }
   });
@@ -81,8 +81,8 @@ const Simple = function ({ clearPrompt, mouseEnabled = false }) {
         borderLeft: true,
         borderStyle: "single",
         borderBottom: false,
-        maxWidth: 50,
         borderRight: false,
+        maxWidth: 50,
         borderColor: "gray",
         // height={20}
         // overflowY="hidden"
@@ -109,7 +109,7 @@ const Banner = function () {
 };
 
 const StatusBox = function () {
-  const gitState = useAppState((store) => store.gitState);
+  const { gitState } = useSnapshot(appState);
   const { repoName } = gitState;
   const incomingName = gitState.branches.incoming
     .map((branch) => {
@@ -136,8 +136,8 @@ const StatusBox = function () {
 };
 
 const Footer = () => {
-  useAppState((store) => store.selected);
-  const conflicts = useAppState((store) => store.gitState.conflicts?.length ?? 0);
+  const { gitState, selected } = useSnapshot(appState);
+  const conflicts = gitState.conflicts?.length ?? 0;
   let message = '';
   if (conflicts > 0) {
     message = ` ${conflicts} file${conflicts > 1 ? 's' : ''} to resolve before continuing`;
@@ -150,7 +150,7 @@ const Footer = () => {
 };
 
 const App = function ({ clearPrompt, mouseEnabled = false }) {
-  const gitState = useAppState((store) => store.gitState);
+  const { gitState } = useSnapshot(appState);
   const { exit } = useApp();
   const { isRawModeSupported } = useStdin();
   const { rows } = useWindowSize();
@@ -460,7 +460,7 @@ const getState = async (options = {}) => {
 try {
   await checkGitEnvironment();
   const gitState = await getState();
-  useAppState.setState({ gitState, selected: 0 });
+  Object.assign(appState, { gitState, selected: 0 });
   if (gitState.conflicts.length === 0) {
     console.log('No merge conflicts found.');
   } else {

@@ -1,23 +1,27 @@
 import test from 'tape'
-import { useAppState } from '../src/UI/store.js'
+import { snapshot } from 'valtio'
+import { appState } from '../src/UI/store.js'
 
-test('shared Zustand store keeps selection in bounds and can be reset', (t) => {
-  useAppState.setState(useAppState.getInitialState(), true)
-  t.teardown(() => useAppState.setState(useAppState.getInitialState(), true))
-  const files = [{ relative: 'first.txt' }, { relative: 'second.txt' }]
-  useAppState.setState({ gitState: { conflicts: files } })
-  useAppState.setState(({ selected }) => ({ selected: selected + 1 }))
-  t.equal(useAppState.getState().selected, 1, 'supports functional updates')
-  t.equal(useAppState.getState().gitState.conflicts[1], files[1], 'selected file comes from gitState')
-  useAppState.setState({ gitState: { conflicts: files.slice(0, 1) } })
-  t.equal(useAppState.getState().selected, 0, 'refresh clamps selection to remaining files')
-  useAppState.setState({ selected: -1 })
-  t.equal(useAppState.getState().selected, 0, 'selection cannot move before the first file')
-  useAppState.setState({ selected: 10 })
-  t.equal(useAppState.getState().selected, 0, 'selection cannot move beyond the last file')
-  useAppState.setState({ gitState: { conflicts: [] } })
-  t.equal(useAppState.getState().selected, 0, 'empty lists retain a valid default')
-  useAppState.setState(useAppState.getInitialState(), true)
-  t.deepEqual(useAppState.getState(), { gitState: { conflicts: [] }, selected: 0 }, 'reset clears shared state between tests')
+test('Valtio state supports direct mutation and keeps selection in bounds', (t) => {
+  const reset = () => Object.assign(appState, { gitState: { conflicts: [] }, selected: 0 })
+  reset()
+  t.teardown(reset)
+  appState.gitState = { conflicts: [{ relative: 'first.txt' }, { relative: 'second.txt' }] }
+  appState.selected += 1
+  t.equal(appState.selected, 1, 'supports direct updates')
+  const before = snapshot(appState)
+  t.equal(before.gitState.conflicts[before.selected].relative, 'second.txt')
+  appState.gitState.conflicts.pop()
+  t.equal(appState.selected, 0, 'nested array mutations immediately clamp selection')
+  t.equal(before.selected, 1, 'existing snapshots remain unchanged')
+  t.equal(before.gitState.conflicts.length, 2, 'existing snapshots preserve nested data')
+  appState.selected = -1
+  t.equal(appState.selected, 0, 'selection cannot move before the first file')
+  appState.selected = 10
+  t.equal(appState.selected, 0, 'selection cannot move beyond the last file')
+  appState.gitState = { conflicts: [] }
+  t.equal(appState.selected, 0, 'empty lists retain a valid default')
+  reset()
+  t.deepEqual(snapshot(appState), { gitState: { conflicts: [] }, selected: 0 }, 'tests can reset shared state')
   t.end()
 })

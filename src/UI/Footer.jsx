@@ -1,10 +1,11 @@
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useAppState } from './store.js'
+import { useSnapshot } from 'valtio'
+import { appState } from './store.js'
 
 const Footer = () => {
-  const selected = useAppState((store) => store.selected)
-  const conflicts = useAppState((store) => store.gitState.conflicts?.length ?? 0)
+  const { gitState, selected } = useSnapshot(appState)
+  const conflicts = gitState.conflicts?.length ?? 0
   let message = ''
   if (conflicts > 0) {
     message = ` ${conflicts} file${conflicts > 1 ? 's' : ''} to resolve before continuing`

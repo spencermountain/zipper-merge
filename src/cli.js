@@ -1,14 +1,14 @@
 import { createElement } from 'react'
 import { render } from 'ink'
 import App from './UI/App.jsx'
-import { useAppState } from './UI/store.js'
+import { appState } from './UI/store.js'
 import { checkGitEnvironment, checkInteractiveTerminal } from './lib/guards.js'
 import { getState } from './lib/git.js'
 
 try {
   await checkGitEnvironment()
   const gitState = await getState()
-  useAppState.setState({ gitState, selected: 0 })
+  Object.assign(appState, { gitState, selected: 0 })
   if (gitState.conflicts.length === 0) {
     console.log('No merge conflicts found.')
   } else {

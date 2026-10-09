@@ -4,10 +4,11 @@ import FileSelect from './FileSelect.jsx'
 import Header from './Header.jsx'
 import StatusBox from './StatusBox.jsx'
 import Footer from './Footer.jsx'
-import { useAppState } from './store.js'
+import { useSnapshot } from 'valtio'
+import { appState } from './store.js'
 
 const App = function ({ clearPrompt, mouseEnabled = false }) {
-  const gitState = useAppState((store) => store.gitState)
+  const { gitState } = useSnapshot(appState)
   const { exit } = useApp()
   const { isRawModeSupported } = useStdin()
   const { rows } = useWindowSize()
